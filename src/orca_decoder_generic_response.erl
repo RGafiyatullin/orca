@@ -26,6 +26,8 @@ decode( Bin0 ) ->
 		FieldsCount -> decode_result_set( FieldsCount )
 	end.
 
+decode_continue( Bin, undefined ) -> decode( Bin );
+
 decode_continue( Bin, #expect_field{ fields_rev_acc = Acc0, fields_left = 1 } ) ->
 	{incomplete, #expect_eof_before_rows{ field_def_packets = lists:reverse( [ Bin | Acc0 ] ) }};
 decode_continue( Bin, S = #expect_field{ fields_rev_acc = Acc0, fields_left = Left0 } ) ->

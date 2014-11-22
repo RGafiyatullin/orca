@@ -1,6 +1,13 @@
 -module (orca_testrun).
 -compile (export_all).
 
+mgr() ->
+	{ok, Mgr} = orca_conn_mgr:start_link("mysql://root:root@127.0.0.1/jd_router?pool_size=2"),
+	ok = timer:sleep(1000),
+	{ok, Query0} = orca_encoder_com:com_query(<<"SHOW PROCESSLIST">>),
+	spawn(fun() -> io:format( "Result: ~p~n", [orca_conn_mgr:execute( Mgr, Query0 )]) end),
+	{ok, Mgr}.
+
 srv() ->
 	{ok, Conn} = orca_conn_srv:start_link( "localhost", 3306, [ {active, false} ] ),
 	{ok, HandshakeReqPacket} = recv_packet( Conn ),

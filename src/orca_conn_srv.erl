@@ -55,6 +55,7 @@ send_packet( Srv, SeqID, Packet )
 		msg_error :: atom(),
 
 		controlling_process :: pid(),
+		controlling_process_mon_ref :: reference(),
 		response_ctx :: orca_response:ctx(),
 
 		active = false :: false | true | once
@@ -68,6 +69,7 @@ enter_loop( Host, Port, Opts ) ->
 			InitialActiveMode = proplists:get_value( active, Opts, false ),
 			{MsgData, MsgClosed, MsgError, MsgPort} = orca_tcp:messages( Tcp ),
 			ResponseCtx = orca_response:new(),
+			ControllingProcessMonRef = erlang:monitor( process, ControllingProcess ),
 			ok = orca_tcp:activate( Tcp ),
 			S0 = #s{
 					host = Host,
@@ -84,6 +86,7 @@ enter_loop( Host, Port, Opts ) ->
 					response_ctx = ResponseCtx,
 
 					controlling_process = ControllingProcess,
+					controlling_process_mon_ref = ControllingProcessMonRef,
 					active = InitialActiveMode
 				},
 			gen_server:enter_loop( ?MODULE, [], S0, ?hib_timeout );
@@ -118,6 +121,15 @@ handle_cast(Request, State = #s{}) ->
 
 handle_info( timeout, State ) ->
 	handle_info_timeout( State );
+
+handle_info(
+		{'DOWN', ControllingProcessMonRef, process, ControllingProcess, Reason},
+		State = #s{
+			controlling_process = ControllingProcess,
+			controlling_process_mon_ref = ControllingProcessMonRef
+		}
+	) ->
+		{stop, {shutdown, {controlling_process_terminated, Reason}}, State};
 
 handle_info( {MsgClosed, MsgPort}, State = #s{ msg_closed = MsgClosed, msg_port = MsgPort } ) ->
 	handle_info_closed( State );

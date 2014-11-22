@@ -1,2 +1,4 @@
 
 Orca - is an attempt to implement a proper MySQL driver for Erlang.
+
+Right now it's a work in progress. What is currently supported can be seen in 'orca_testrun' module.
