@@ -2,9 +2,9 @@
 -compile (export_all).
 
 mgr() ->
-	{ok, Mgr} = orca_conn_mgr:start_link("mysql://root:root@127.0.0.1/jd_router?pool_size=2"),
+	{ok, Mgr} = orca_conn_mgr:start_link("mysql://root:root@127.0.0.1/mysql?pool_size=2"),
 	ok = timer:sleep(1000),
-	{ok, Query0} = orca_encoder_com:com_query(<<"SHOW PROCESSLIST">>),
+	{ok, Query0} = orca_encoder_com:com_query(<<"SHOW TABLE STATUS LIKE ?">>, [ <<"innodb%">> ]),
 	spawn(fun() -> io:format( "Result: ~p~n", [orca_conn_mgr:execute( Mgr, Query0 )]) end),
 	{ok, Mgr}.
 

@@ -133,9 +133,10 @@ handle_info( timeout, State ) ->
 
 handle_info( ?orca_packet( WorkerPid, PacketBin ), State ) ->
 	case worker_state( WorkerPid ) of
-		expect_handshake -> handle_info_orca_packet_handshake( WorkerPid, PacketBin, State );
-		expect_auth_result -> handle_info_orca_auth_result( WorkerPid, PacketBin, State );
-		{ready, DecodeCtx} -> handle_info_orca_packet_generic( WorkerPid, PacketBin, DecodeCtx, State );
+		expect_handshake -> handle_info_packet_handshake( WorkerPid, PacketBin, State );
+		expect_auth_result -> handle_info_packet_auth_result( WorkerPid, PacketBin, State );
+		expect_init_db_result -> handle_info_init_db_result( WorkerPid, PacketBin, State );
+		{ready, DecodeCtx} -> handle_info_packet_generic( WorkerPid, PacketBin, DecodeCtx, State );
 		WState ->
 			error_logger:warning_report([
 					?MODULE, handle_info,
@@ -185,7 +186,7 @@ init_start_all_workers( S0 = #s{ conn_pool = ConnPoolIn } ) ->
 		ConnPoolIn, ConnPoolIn #conn_pool.workers ),
 	{ok, S0 #s{ conn_pool = ConnPoolOut }}.
 
-handle_info_orca_packet_handshake(
+handle_info_packet_handshake(
 		WorkerPid, HandshakeReqBin,
 		State = #s{
 				conn_props = #conn_props{ user = User, password = Password, database = Database }
@@ -201,20 +202,48 @@ handle_info_orca_packet_handshake(
 	ok = worker_state( WorkerPid, expect_auth_result ),
 	{noreply, State, ?hib_timeout}.
 
-handle_info_orca_auth_result( WorkerPid, AuthResultBin, State = #s{ lb = LB0 } ) ->
+handle_info_packet_auth_result(
+	WorkerPid, AuthResultBin,
+	State = #s{ conn_props = #conn_props{ database = DatabaseName } }
+) ->
 	{ok, {AuthResultType, AuthResultProps}} = orca_decoder_generic_response:decode( AuthResultBin ),
 	case AuthResultType of
 		ok_packet ->
-			ok = worker_state( WorkerPid, sleep ),
+			{ok, COMInitDb} = orca_encoder_com:com_init_db( DatabaseName ),
+			ok = orca_conn_srv:send_packet( WorkerPid, 0, COMInitDb ),
+			ok = orca_conn_srv:set_active( WorkerPid, once ),
+			ok = worker_state( WorkerPid, expect_init_db_result ),
+			{noreply, State, ?hib_timeout};
+		err_packet ->
+			ok = orca_conn_srv:set_active( WorkerPid, once ),
+			ok = worker_state( WorkerPid, expect_closed ),
+
+			ok = error_logger:warning_report([
+					?MODULE, handle_info_packet_auth_result, auth_failure
+					| AuthResultProps
+				]),
+			{noreply, State, ?hib_timeout}
+	end.
+
+handle_info_init_db_result( WorkerPid, PacketBin, State = #s{ lb = LB0 } ) ->
+	{ok, {InitDbResultType, InitDbResultProps}} = orca_decoder_generic_response:decode( PacketBin ),
+	case InitDbResultType of
+		ok_packet ->
 			ok = orca_conn_srv:set_active( WorkerPid, once ),
 			{ok, LB1} = orca_conn_mgr_lb:add( WorkerPid, LB0 ),
+			ok = worker_state( WorkerPid, {ready, undefined} ),
+
 			{noreply, State #s{ lb = LB1 }, ?hib_timeout};
 		err_packet ->
-			ok = worker_state( WorkerPid, expect_closed ),
+			{ok, ComQuit} = orca_encoder_com:com_quit(),
+			ok = orca_conn_srv:send_packet( WorkerPid, 0, ComQuit ),
+
 			ok = orca_conn_srv:set_active( WorkerPid, once ),
+			ok = worker_state( WorkerPid, expect_closed ),
+
 			ok = error_logger:warning_report([
-					?MODULE, handle_info_orca_auth_result, auth_failure
-					| AuthResultProps
+					?MODULE, handle_info_init_db_result, init_db_failure
+					| InitDbResultProps
 				]),
 			{noreply, State, ?hib_timeout}
 	end.
@@ -251,7 +280,7 @@ handle_call_execute( PacketBin, GenReplyTo, State = #s{ lb = LB0 } ) ->
 			{noreply, State #s{ lb = LB1 }}
 	end.
 
-handle_info_orca_packet_generic( WorkerPid, PacketBin, DecodeCtx0, State = #s{ lb = LB0 } ) ->
+handle_info_packet_generic( WorkerPid, PacketBin, DecodeCtx0, State = #s{ lb = LB0 } ) ->
 	DecodeResult =
 		orca_decoder_generic_response:decode_continue( PacketBin, DecodeCtx0 ),
 	case DecodeResult of

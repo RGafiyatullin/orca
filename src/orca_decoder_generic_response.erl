@@ -37,12 +37,16 @@ decode_continue( <<?PACKET_TYPE_EOF:8/integer, _/binary>>, #expect_eof_before_ro
 	{incomplete, #expect_row_or_eof{ field_def_packets = FieldDefPackets, rows_rev_acc = [] }};
 
 decode_continue(
-	<<?PACKET_TYPE_EOF:8/integer, _/binary>>,
+	<<?PACKET_TYPE_EOF:8/integer, Bin0/binary>>,
 	#expect_row_or_eof{ field_def_packets = FieldDefPackets, rows_rev_acc = RevAcc }
 ) ->
+	{ok, NumberOfWarnings, Bin1} = orca_type_decoder:take( {int, 2}, Bin0 ),
+	{ok, StatusFlags, _Bin2} = orca_type_decoder:take( {int, 2}, Bin1 ),
 	{ok, {result_set_raw, [
 			{rows_raw, lists:reverse( RevAcc )},
-			{field_defs_raw, FieldDefPackets}
+			{field_defs_raw, FieldDefPackets},
+			{status_flags, StatusFlags},
+			{number_of_warnings, NumberOfWarnings}
 		]}};
 decode_continue( Bin, S = #expect_row_or_eof{ rows_rev_acc = Acc0 } ) ->
 	{incomplete, S #expect_row_or_eof{ rows_rev_acc = [ Bin | Acc0 ] }}.

@@ -5,8 +5,9 @@
 	]).
 -include ("proto_consts.hrl").
 
-decode( RawResultSetProps ) ->
-	{field_defs_raw, FieldDefsRaw} = lists:keyfind( field_defs_raw, 1, RawResultSetProps ),
+decode( Props0 ) ->
+	{value, {field_defs_raw, FieldDefsRaw}, Props1} = lists:keytake( field_defs_raw, 1, Props0 ),
+	{value, {rows_raw, RowsRaw}, Props2} = lists:keytake( rows_raw, 1, Props1 ),
 
 	FieldDefs = lists:map(
 			fun decode_field_def/1,
@@ -15,7 +16,6 @@ decode( RawResultSetProps ) ->
 			fun def_props_to_record/1,
 			FieldDefs),
 
-	{rows_raw, RowsRaw} = lists:keyfind( rows_raw, 1, RawResultSetProps ),
 	Rows = lists:map(
 		fun ( RowRaw ) ->
 			decode_row_using_field_defs( FieldDefRecords, RowRaw )
@@ -24,6 +24,7 @@ decode( RawResultSetProps ) ->
 	{ok, [
 			{field_defs, FieldDefs},
 			{rows, Rows}
+			| Props2
 		]}.
 
 decode_field_def( Bin0 ) ->
