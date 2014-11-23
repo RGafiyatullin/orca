@@ -2,3 +2,13 @@
 Orca - is an attempt to implement a proper MySQL driver for Erlang.
 
 Right now it's a work in progress. What is currently supported can be seen in 'orca_testrun' module.
+
+Usage:
+	-include_lib("orca/include/orca.hrl").
+	...
+	{ok, Db} = orca:start_link( <<"mysql://root:rootpw@localhost/mysql?pool_size=4">> ),
+	{ok, #orca_rows{ rows = Rows }} = orca:sql( <<"SHOW TABLE STATUS LIKE ?">>, [ <<"innodb%">> ] ),
+	...
+
+
+

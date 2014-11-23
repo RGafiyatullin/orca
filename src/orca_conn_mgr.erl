@@ -265,8 +265,15 @@ handle_info_down( Ref, Pid, Reason, State0 = #s{ conn_pool = ConnPool0, lb = LB0
 
 			ok = worker_state( Pid, undefined ),
 			ConnPool1 = ConnPool0 #conn_pool{ workers = [ #pool_worker{ idx = Idx } | Workers1] },
+
 			{ok, ConnPool2} = conn_pool_worker_start( Idx, ConnPool1 ),
-			{ok, LB1} = orca_conn_mgr_lb:rm( Pid, LB0 ),
+
+			{ok, ReplyToQueue, LB1} = orca_conn_mgr_lb:rm( Pid, LB0 ),
+			ok = lists:foreach(
+				fun (GenReplyTo) ->
+					_ = gen_server:reply( GenReplyTo, {error, {conn_down, Reason}} )
+				end,
+				queue:to_list( ReplyToQueue ) ),
 			{noreply, State0 #s{ conn_pool = ConnPool2, lb = LB1 }, ?hib_timeout}
 	end.
 
