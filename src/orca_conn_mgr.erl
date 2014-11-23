@@ -19,11 +19,14 @@
 -define(execute( PacketBin ), {execute, PacketBin}).
 
 -define(
-	init_args( User, Password, Host, Port, Database, PoolSize ),
-	{init_args, User, Password, Host, Port, Database, PoolSize} ).
+	init_args( User, Password, Host, Port, Database, PoolSize, MinRestartInterval ),
+	{init_args, User, Password, Host, Port, Database, PoolSize, MinRestartInterval} ).
 -define(
 	orca_packet( ConnSrv, PacketBin ),
 	{orca_packet, ConnSrv, PacketBin} ).
+-define(
+	worker_start(Idx),
+	{worker_start, Idx}).
 
 start_link( Url ) when is_binary( Url ) ->
 	start_link( binary_to_list( Url ) );
@@ -39,13 +42,14 @@ start_link( Url = [ $m, $y, $s, $q, $l, $:, $/, $/ | _ ] ) ->
 		[ begin [K, V] = string:tokens( KV, "=" ), {K, V} end
 			|| KV <- string:tokens( QueryString, "&" ) ],
 	PoolSize = list_to_integer( proplists:get_value( "pool_size", ArgsParsed, "1" ) ),
+	MinRestartInterval = list_to_integer( proplists:get_value( "min_restart_interval", ArgsParsed, "1000" ) ),
 	[User, Password] = string:tokens( UserPassword, ":" ),
 	InitArgs = ?init_args(
 					list_to_binary(User),
 					list_to_binary(Password),
 					Host, Port,
 					list_to_binary(Database),
-					PoolSize ),
+					PoolSize, MinRestartInterval ),
 	proc_lib:start_link( ?MODULE, enter_loop, [InitArgs] ).
 
 execute( Srv, PacketBin ) ->
@@ -76,11 +80,14 @@ execute_result( {ok, {result_set_raw, RawProps}} ) ->
 -record(pool_worker, {
 		idx :: non_neg_integer(),
 		pid :: undefined | pid(),
-		mon :: undefined | reference()
+		mon :: undefined | reference(),
+
+		last_start = 0 :: integer()
 	}).
 -record(conn_pool, {
 		sup :: pid(),
-		workers = [] :: [ #pool_worker{} ]
+		workers = [] :: [ #pool_worker{} ],
+		min_restart_interval :: non_neg_integer()
 	}).
 -record(s, {
 		lb :: orca_conn_mgr_lb:ctx(),
@@ -90,7 +97,7 @@ execute_result( {ok, {result_set_raw, RawProps}} ) ->
 	}).
 
 init( _ ) -> {error, enter_loop_used}.
-enter_loop(?init_args( User, Password, Host, Port, Database, PoolSize )) ->
+enter_loop(?init_args( User, Password, Host, Port, Database, PoolSize, MinRestartInterval )) ->
 	ConnProps = #conn_props{
 			user = User,
 			password = Password,
@@ -98,7 +105,7 @@ enter_loop(?init_args( User, Password, Host, Port, Database, PoolSize )) ->
 			port = Port,
 			database = Database
 		},
-	{ok, ConnPool} = init_conn_pool( PoolSize, Host, Port ),
+	{ok, ConnPool} = init_conn_pool( PoolSize, MinRestartInterval, Host, Port ),
 	{ok, LB} = orca_conn_mgr_lb:new(),
 	S0 = #s{
 			lb = LB,
@@ -146,6 +153,9 @@ handle_info( ?orca_packet( WorkerPid, PacketBin ), State ) ->
 			{noreply, State, ?hib_timeout}
 	end;
 
+handle_info( ?worker_start(Idx), State ) ->
+	handle_info_worker_start( Idx, State );
+
 handle_info( {'DOWN', Ref, process, Pid, Reason}, State = #s{} ) ->
 	handle_info_down( Ref, Pid, Reason, State );
 
@@ -166,14 +176,15 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal %%%
 %%% %%%%%%%% %%%
 
-init_conn_pool( PoolSize, Host, Port ) ->
+init_conn_pool( PoolSize, MinRestartInterval, Host, Port ) ->
 	{ok, Sup} = simplest_one_for_one:start_link( {orca_conn_srv, start_link, [ Host, Port ]} ),
 	Pool = #conn_pool{
 			sup = Sup,
 			workers = [
 					#pool_worker{ idx = Idx }
 					|| Idx <- lists:seq(0, PoolSize - 1)
-				]
+				],
+			min_restart_interval = MinRestartInterval
 		},
 	{ok, Pool}.
 
@@ -248,6 +259,10 @@ handle_info_init_db_result( WorkerPid, PacketBin, State = #s{ lb = LB0 } ) ->
 			{noreply, State, ?hib_timeout}
 	end.
 
+handle_info_worker_start( Idx, State = #s{ conn_pool = ConnPool0 } ) ->
+	{ok, ConnPool1} = maybe_restart_worker( Idx, ConnPool0 ),
+	{noreply, State #s{ conn_pool = ConnPool1 }}.
+
 handle_info_down( Ref, Pid, Reason, State0 = #s{ conn_pool = ConnPool0, lb = LB0 } ) ->
 	Workers0 = ConnPool0 #conn_pool.workers,
 	case lists:keytake( Ref, #pool_worker.mon, Workers0 ) of
@@ -257,17 +272,16 @@ handle_info_down( Ref, Pid, Reason, State0 = #s{ conn_pool = ConnPool0, lb = LB0
 					unexpected_down_msg, {pid, Pid}, {reason, Reason}
 				]),
 			{noreply, State0, ?hib_timeout};
-		{value, #pool_worker{ idx = Idx, pid = Pid, mon = Ref }, Workers1} ->
+		{value, W0 = #pool_worker{ idx = Idx, pid = Pid, mon = Ref }, Workers1} ->
 			ok = error_logger:warning_report([
 					?MODULE, handle_info_down,
 					worker_down, {idx, Idx}, {pid, Pid}, {reason, Reason}
 				]),
 
 			ok = worker_state( Pid, undefined ),
-			ConnPool1 = ConnPool0 #conn_pool{ workers = [ #pool_worker{ idx = Idx } | Workers1] },
-
-			{ok, ConnPool2} = conn_pool_worker_start( Idx, ConnPool1 ),
-
+			W1 = W0 #pool_worker{ pid = undefined, mon = undefined },
+			ConnPool1 = ConnPool0 #conn_pool{ workers = [ W1 | Workers1 ] },
+			{ok, ConnPool2} = maybe_restart_worker( Idx, ConnPool1 ),
 			{ok, ReplyToQueue, LB1} = orca_conn_mgr_lb:rm( Pid, LB0 ),
 			ok = lists:foreach(
 				fun (GenReplyTo) ->
@@ -302,21 +316,39 @@ handle_info_packet_generic( WorkerPid, PacketBin, DecodeCtx0, State = #s{ lb = L
 			{noreply, State #s{ lb = LB1 }}
 	end.
 
-
-
-
-
 handle_info_timeout( State ) ->
 	{noreply, State, hibernate}.
+
+maybe_restart_worker( Idx, ConnPool0 ) ->
+	case restart_frequency_exceeded( Idx, ConnPool0 ) of
+		false ->
+			{ok, _ConnPool1} = conn_pool_worker_start( Idx, ConnPool0 );
+		{true, AllowedToStartInMs} ->
+			_ = erlang:send_after( AllowedToStartInMs, self(), ?worker_start(Idx) ),
+			{ok, ConnPool0}
+	end.
+
+restart_frequency_exceeded( Idx, #conn_pool{ min_restart_interval = MinRestartInterval, workers = Ws0 } ) ->
+	#pool_worker{ last_start = LastStart } = lists:keyfind( Idx, #pool_worker.idx, Ws0 ),
+	NowMs = now_ms(),
+	case LastStart + MinRestartInterval - NowMs of
+		NonPosValue when is_integer(NonPosValue) andalso NonPosValue =< 0 -> false;
+		PosValue when is_integer(PosValue) andalso PosValue > 0 -> {true, PosValue}
+	end.
+
+
+now_ms() ->
+	{MegS, S, MuS} = erlang:now(),
+	(((MegS * 1000000) + S) * 1000) + (MuS div 1000).
 
 conn_pool_worker_start( Idx, ConnPool0 = #conn_pool{ workers = Workers0, sup = Sup } ) ->
 	MgrPid = self(),
 	ConnInitialOpts = [ {active, once}, {controlling_process, MgrPid} ],
 	case lists:keytake( Idx, #pool_worker.idx, Workers0 ) of
-		{value, #pool_worker{ pid = undefined, mon = undefined }, Workers1} ->
+		{value, W0 = #pool_worker{ pid = undefined, mon = undefined }, Workers1} ->
 			{ok, WorkerPid} = supervisor:start_child( Sup, [ ConnInitialOpts ] ),
 			WorkerMon = erlang:monitor( process, WorkerPid ),
-			WorkerEntry = #pool_worker{ idx = Idx, pid = WorkerPid, mon = WorkerMon },
+			WorkerEntry = W0 #pool_worker{ idx = Idx, pid = WorkerPid, mon = WorkerMon, last_start = now_ms() },
 			ok = worker_state( WorkerPid, expect_handshake ),
 
 			{ok, ConnPool0 #conn_pool{ workers = [ WorkerEntry | Workers1 ] }};

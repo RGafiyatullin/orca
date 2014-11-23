@@ -1,12 +1,20 @@
 
 Orca - is an attempt to implement a proper MySQL driver for Erlang.
 
-Right now it's a work in progress. What is currently supported can be seen in 'orca_testrun' module.
+The main concepts are the following:
+* this is a library application that does not create its own supervision tree:
+ instead your application uses orca:start_link/1 function (which has a typical start_link-semantics)
+ to attach the connection-pool to your own supervision tree, where you like it, with the restart strategy you wish.
+* Orca uses kind of pipelining when executing queries: upstream and downstream are losely synchronised, hence the
+ consequent COM_QUERY's are sent prior to the previous result-sets are received. This is expected to save some time on the latencies.
+* Orca provides packet-wise interface to the MySQL connection if you need it:
+ - orca:raw_packet(pid(), binary()) - allows you to pass the customly built packets to the database (it's expected to cauase a generic-result [ok_packet, err_packet or result-set packet sequence]);
+ - if you do want some raw access - orca_conn_srv is at your service: send packets, receive packets; the semantics is similar to active-once and active-true when working with gen_tcp.
 
-Usage:
+Most common usage:
 	-include_lib("orca/include/orca.hrl").
 	...
-	{ok, Db} = orca:start_link( <<"mysql://root:rootpw@localhost/mysql?pool_size=4">> ),
+	{ok, Db} = orca:start_link( <<"mysql://root:rootpw@localhost/mysql?pool_size=4&min_restart_interval=500">> ),
 	{ok, #orca_rows{ rows = Rows }} = orca:sql( <<"SHOW TABLE STATUS LIKE ?">>, [ <<"innodb%">> ] ),
 	...
 
