@@ -31,25 +31,20 @@
 start_link( Url ) when is_binary( Url ) ->
 	start_link( binary_to_list( Url ) );
 start_link( Url = [ $m, $y, $s, $q, $l, $:, $/, $/ | _ ] ) ->
-	{ok, {mysql, UserPassword, Host, Port, [ $/ | Database ], MaybeQueryString}} =
-		http_uri:parse(Url, [{scheme_defaults, [{mysql, 3306}]}]),
-	QueryString =
-		case MaybeQueryString of
-			[ $? | QS ] -> QS;
-			[] -> []
-		end,
-	ArgsParsed =
-		[ begin [K, V] = string:tokens( KV, "=" ), {K, V} end
-			|| KV <- string:tokens( QueryString, "&" ) ],
-	PoolSize = list_to_integer( proplists:get_value( "pool_size", ArgsParsed, "1" ) ),
-	MinRestartInterval = list_to_integer( proplists:get_value( "min_restart_interval", ArgsParsed, "1000" ) ),
-	[User, Password] = string:tokens( UserPassword, ":" ),
+	{ok, ConnProps} = orca_url:parse( Url ),
+	ConnHost = proplists:get_value( host, ConnProps ),
+	ConnPort = proplists:get_value( port, ConnProps ),
+	ConnUser = proplists:get_value( user, ConnProps ),
+	ConnPassword = proplists:get_value( password, ConnProps ),
+	ConnDbName = proplists:get_value( db_name, ConnProps ),
+
+	PoolSize = proplists:get_value( pool_size, ConnProps ),
+	MinRestartInterval = proplists:get_value( min_restart_interval, ConnProps ),
+
 	InitArgs = ?init_args(
-					list_to_binary(User),
-					list_to_binary(Password),
-					Host, Port,
-					list_to_binary(Database),
-					PoolSize, MinRestartInterval ),
+					ConnUser, ConnPassword,
+					ConnHost, ConnPort,
+					ConnDbName, PoolSize, MinRestartInterval ),
 	proc_lib:start_link( ?MODULE, enter_loop, [InitArgs] ).
 
 execute( Srv, PacketBin ) ->

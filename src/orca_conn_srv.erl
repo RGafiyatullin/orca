@@ -3,7 +3,8 @@
 -behaviour (gen_server).
 
 -export ([ start_link/2, start_link/3 ]).
--export ([ set_active/2, send_packet/3 ]).
+-export ([ set_active/2 ]).
+-export ([ send_packet/3, recv_packet/1 ]).
 -export ([
 		init/1, enter_loop/3,
 		handle_call/3,
@@ -19,10 +20,12 @@
 -spec start_link( inet_host(), inet_port() ) -> {ok, pid()} | {error, Reason :: term()}.
 -spec start_link( inet_host(), inet_port(), [option()] ) -> {ok, pid()} | {error, Reason :: term()}.
 
--define(set_active( Mode ), {set_active, Mode}).
--define(send_packet( SeqID, Packet ), {send_packet, SeqID, Packet}).
+-define( set_active( Mode ), {set_active, Mode} ).
+-define( send_packet( SeqID, Packet ), {send_packet, SeqID, Packet} ).
+-define( recv_packet(), recv_packet ).
+-define( recv_default_timeout, 5000 ).
 
--define(hib_timeout, 5000).
+-define( hib_timeout, 5000 ).
 
 start_link( Host, Port ) -> start_link( Host, Port, [] ).
 start_link( Host, Port, Opts0 ) when ?is_inet_port( Port ) ->
@@ -42,6 +45,8 @@ send_packet( Srv, SeqID, Packet )
 ->
 	gen_server:cast( Srv, ?send_packet( SeqID, Packet ) ).
 
+recv_packet( Srv ) when is_pid( Srv ) ->
+	gen_server:call( Srv, ?recv_packet(), ?recv_default_timeout ).
 
 -record(s, {
 		host :: inet_host(),
@@ -58,7 +63,9 @@ send_packet( Srv, SeqID, Packet )
 		controlling_process_mon_ref :: reference(),
 		response_ctx :: orca_response:ctx(),
 
-		active = false :: false | true | once
+		active = false :: false | true | once,
+
+		sync_recv_reply_q = queue:new() :: queue:queue( {pid(), reference()} )
 	}).
 
 enter_loop( Host, Port, Opts ) ->
@@ -97,6 +104,8 @@ enter_loop( Host, Port, Opts ) ->
 
 init( _ ) -> {error, enter_loop_used}.
 
+handle_call( ?recv_packet(), GenReplyTo, State = #s{} ) ->
+	handle_call_recv_packet( GenReplyTo, State );
 
 handle_call(Request, From, State = #s{}) ->
 	error_logger:warning_report([
@@ -190,21 +199,45 @@ handle_cast_send_packet( SeqID, Packet, State = #s{ tcp = Tcp } ) ->
 handle_info_timeout( State ) ->
 	{noreply, State, hibernate}.
 
+handle_call_recv_packet( GenReplyTo, State = #s{ tcp = Tcp, response_ctx = ResponseCtx0, sync_recv_reply_q = Q0 } ) ->
+	case orca_response:get_packet( ResponseCtx0 ) of
+		{error, not_ready} ->
+			ok = orca_tcp:activate( Tcp ),
+			{noreply, State #s{ sync_recv_reply_q = queue:in( GenReplyTo, Q0 ) }};
+		{ok, Packet, ResponseCtx1} ->
+			ok = orca_tcp:activate( Tcp ),
+			{reply, {ok, Packet}, State #s{ response_ctx = ResponseCtx1 } }
+	end.
 
+maybe_deliver_packets_to_sync_recipients( State0 = #s{ response_ctx = ResponseCtx0, sync_recv_reply_q = Q0 } ) ->
+	case queue:peek( Q0 ) of
+		empty -> {ok, State0};
+		{value, SyncRecipient} ->
+			case orca_response:get_packet( ResponseCtx0 ) of
+				{error, not_ready} -> {ok, State0};
+				{ok, Packet, ResponseCtx1} ->
+					_ = gen_server:reply( SyncRecipient, {ok, Packet} ),
+					Q1 = queue:drop( Q0 ),
+					State1 = State0 #s{ response_ctx = ResponseCtx1, sync_recv_reply_q = Q1 },
+					maybe_deliver_packets_to_sync_recipients( State1 )
+			end
+	end.
 
-
-maybe_deliver_packets( State0 = #s{ active = false } ) -> {ok, State0};
+maybe_deliver_packets( State0 = #s{ active = false } ) ->
+	{ok, _State1} = maybe_deliver_packets_to_sync_recipients( State0 );
 maybe_deliver_packets(
 	State0 = #s{
-		active = ShouldSend,
-		response_ctx = ResponseCtx0,
-		controlling_process = ControllingProcess
+		active = ShouldSend
 	}
 ) when in( ShouldSend, [ true, once ] ) ->
+	{ok, State1 = #s{
+			response_ctx = ResponseCtx0,
+			controlling_process = ControllingProcess
+		}} = maybe_deliver_packets_to_sync_recipients( State0 ),
 	case orca_response:get_packet( ResponseCtx0 ) of
 		{error, not_ready} ->
 			% error_logger:info_report([?MODULE, maybe_deliver_packets, packet_q_empty]),
-			maybe_activate_tcp( State0 );
+			maybe_activate_tcp( State1 );
 		{ok, Packet, ResponseCtx1} ->
 			ok = deliver_packet( ControllingProcess, Packet ),
 			NextActiveMode =
@@ -212,8 +245,8 @@ maybe_deliver_packets(
 					true -> true;
 					once -> false
 				end,
-			State1 = State0 #s{ active = NextActiveMode, response_ctx = ResponseCtx1 },
-			maybe_deliver_packets( State1 )
+			State2 = State1 #s{ active = NextActiveMode, response_ctx = ResponseCtx1 },
+			maybe_deliver_packets( State2 )
 	end.
 
 maybe_activate_tcp( State0 = #s{ active = false } ) -> {ok, State0};

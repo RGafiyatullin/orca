@@ -8,6 +8,7 @@
 		% create_db/2, drop_db/2,
 		raw_packet/2
 	]).
+
 -include("orca.hrl").
 
 start_link( Url ) -> orca_conn_mgr:start_link( Url ).
