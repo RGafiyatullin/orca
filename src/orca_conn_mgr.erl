@@ -346,12 +346,20 @@ conn_pool_worker_start( Idx, ConnPool0 = #conn_pool{ workers = Workers0, sup = S
 	ConnInitialOpts = [ {active, once}, {controlling_process, MgrPid} ],
 	case lists:keytake( Idx, #pool_worker.idx, Workers0 ) of
 		{value, W0 = #pool_worker{ pid = undefined, mon = undefined }, Workers1} ->
-			{ok, WorkerPid} = supervisor:start_child( Sup, [ ConnInitialOpts ] ),
-			WorkerMon = erlang:monitor( process, WorkerPid ),
-			WorkerEntry = W0 #pool_worker{ idx = Idx, pid = WorkerPid, mon = WorkerMon, last_start = now_ms() },
-			ok = worker_state( WorkerPid, expect_handshake ),
+			case supervisor:start_child( Sup, [ ConnInitialOpts ] ) of
+				{ok, WorkerPid} ->
+					WorkerMon = erlang:monitor( process, WorkerPid ),
+					W1 = W0 #pool_worker{ idx = Idx, pid = WorkerPid, mon = WorkerMon, last_start = now_ms() },
+					ok = worker_state( WorkerPid, expect_handshake ),
 
-			{ok, ConnPool0 #conn_pool{ workers = [ WorkerEntry | Workers1 ] }};
+					{ok, ConnPool0 #conn_pool{ workers = [ W1 | Workers1 ] }};
+				{error, StartChildError} ->
+					error_logger:warning_report([?MODULE, conn_pool_worker_start,
+						{idx, Idx}, {failed_to_start_worker, StartChildError} ]),
+					W1 = W0 #pool_worker{ last_start = now_ms() },
+					ConnPool1 = ConnPool0 #conn_pool{ workers = [ W1 | Workers1 ] },
+					{ok, _ConnPool2} = maybe_restart_worker( Idx, ConnPool1 )
+			end;
 		{value, #pool_worker{ pid = WorkerPid }} when is_pid( WorkerPid ) ->
 			{ok, ConnPool0}
 	end.
