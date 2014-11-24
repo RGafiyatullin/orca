@@ -2,6 +2,7 @@
 -compile ({parse_transform, gin}).
 -export ([
 		start_link/1,
+		init_db/2,
 		ping/1,
 		sql/2, sql/3,
 		process_info/1,
@@ -38,6 +39,9 @@ start_link( Url ) ->
 		err_packet -> {error, {auth, PropsAuthResult}}
 	end.
 
+init_db( C, Db ) ->
+	{ok, ComInitDb} = orca_encoder_com:com_init_db( Db ),
+	raw_packet( C, ComInitDb ).
 
 ping( C ) ->
 	{ok, ComPing} = orca_encoder_com:com_ping(),
