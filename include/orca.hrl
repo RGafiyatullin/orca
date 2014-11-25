@@ -20,5 +20,8 @@
 		sql_state_marker = <<>> :: binary(),
 		sql_state = <<>> :: binary()
 	}).
+-record(orca_request_local_file_content, {
+		filename :: binary()
+	}).
 
 -endif. % orca_include_orca_hrl

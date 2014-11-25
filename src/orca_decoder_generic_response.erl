@@ -23,6 +23,8 @@ decode( Bin0 ) ->
 		?PACKET_TYPE_OK -> decode_ok_packet( Bin1 );
 		?PACKET_TYPE_ERR -> decode_err_packet( Bin1 );
 		% ?PACKET_TYPE_EOF -> decode_eof_packet( Bin1 );
+		?PACKET_TYPE_REQUEST_LOCAL_FILE_CONTENT ->
+			decode_request_local_file_content( Bin1 );
 		FieldsCount -> decode_result_set( FieldsCount )
 	end.
 
@@ -81,5 +83,9 @@ decode_err_packet( Bin0 ) ->
 
 decode_result_set( FieldsCount ) -> {incomplete, #expect_field{ fields_rev_acc = [], fields_left = FieldsCount }}.
 
-
+decode_request_local_file_content( Bin0 ) ->
+	{ok, FileName, <<>>} = orca_type_decoder:take( {string, eof}, Bin0 ),
+	{ok, {request_local_file_content, [
+			{filename, FileName}
+		]}}.
 

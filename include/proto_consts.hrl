@@ -33,6 +33,7 @@
 -define( PACKET_TYPE_OK,  16#00 ).
 -define( PACKET_TYPE_ERR, 16#FF ).
 -define( PACKET_TYPE_EOF, 16#FE ).
+-define( PACKET_TYPE_REQUEST_LOCAL_FILE_CONTENT, 16#FB ).
 
 %% Commands
 

@@ -2,6 +2,7 @@
 -compile ({parse_transform, gin}).
 -compile (export_all).
 -include ("orca.hrl").
+-include ("proto_consts.hrl").
 
 all() ->
 	ok = lists:foreach(
@@ -28,6 +29,7 @@ sql_table_create_test_1() ->
 		", b BINARY(12) NOT NULL"
 		", dt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"
 		", PRIMARY KEY (id)"
+		", UNIQUE (i)"
 		")">>.
 sql_insert_into_test_1() ->
 	<<"INSERT INTO test_1 ( i, vc, c, vb, b ) VALUES "
@@ -73,11 +75,21 @@ test_02_gen( Mod, Orca ) ->
 
 
 test_03_conn() ->
-	{ok, Conn} = orca_conn:start_link( db_url() ),
+	{ok, Conn} = orca_conn:start_link( db_url(), [ {cap_add, ?CAP_CLIENT_LOCAL_FILES} ] ),
 	{ok, #orca_ok{}} = orca_conn:sql( Conn, <<"DROP TABLE IF EXISTS test_1">> ),
 	{ok, #orca_ok{}} = orca_conn:sql( Conn, sql_table_create_test_1() ),
-	_Whut = orca_conn:sql( Conn, <<"LOAD DATA LOCAL INFILE 'test-file' INTO TABLE test_1">> ).
-	% ok = orca_conn:shutdown( Conn, normal ).
-
-
-
+	{ok, #orca_request_local_file_content{ filename = <<"test-file.tsv">> }} =
+		orca_conn:sql( Conn, <<
+			"LOAD DATA LOCAL INFILE 'test-file.tsv' INTO TABLE test_1 "
+			"(i, vc, c, vb, b)">> ),
+	ok = orca_conn:raw_packet( Conn, 2, <<
+			"1\tvarchar1\tchar1\tvarbinary1\tbinary1\n"
+			"2\tvarchar2\tchar2\tvarbinary2\tbinary2\n"
+		>> ),
+	ok = orca_conn:raw_packet( Conn, 3, <<
+			"3\tvarchar3\tchar3\tvarbinary3\tbinary3\n"
+			"2\tvarchar4\tchar4\tvarbinary4\tbinary4\n"
+		>> ),
+	ok = orca_conn:raw_packet( Conn, 4, <<>> ),
+	{ok, #orca_ok{ affected_rows = 3 }} = orca_conn:recv_response( Conn ),
+	ok = orca_conn:shutdown( Conn, normal ).

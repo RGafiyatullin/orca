@@ -9,7 +9,9 @@
 		process_info/1,
 		process_kill/2,
 		quit/1,
-		raw_packet/2
+		raw_packet_and_recv/2,
+		raw_packet/3,
+		recv_response/1
 	]).
 -include("orca.hrl").
 
@@ -51,33 +53,38 @@ shutdown( OrcaConn, Reason ) when is_pid( OrcaConn ) ->
 
 init_db( C, Db ) ->
 	{ok, ComInitDb} = orca_encoder_com:com_init_db( Db ),
-	raw_packet( C, ComInitDb ).
+	raw_packet_and_recv( C, ComInitDb ).
 
 ping( C ) ->
 	{ok, ComPing} = orca_encoder_com:com_ping(),
-	raw_packet( C, ComPing ).
+	raw_packet_and_recv( C, ComPing ).
 
 sql( C, Q ) -> sql( C, Q, [] ).
 sql( C, Q, A ) ->
 	{ok, ComQuery} = orca_encoder_com:com_query( Q, A ),
-	raw_packet( C, ComQuery ).
+	raw_packet_and_recv( C, ComQuery ).
 
 quit( C ) ->
 	{ok, ComQuit} = orca_encoder_com:com_quit(),
-	raw_packet( C, ComQuit ).
+	raw_packet_and_recv( C, ComQuit ).
 
 process_info( C ) ->
 	{ok, ComProcessInfo} = orca_encoder_com:com_process_info(),
-	raw_packet( C, ComProcessInfo ).
+	raw_packet_and_recv( C, ComProcessInfo ).
 
 process_kill( C, ThreadID ) ->
 	{ok, ComKill} = orca_encoder_com:com_process_kill( ThreadID ),
-	raw_packet( C, ComKill ).
+	raw_packet_and_recv( C, ComKill ).
 
-raw_packet( C, Packet ) ->
+raw_packet_and_recv( C, Packet ) ->
 	ok = orca_conn_srv:send_packet( C, 0, Packet ),
-	recv_response( C, orca_conn_srv:recv_packet( C ), undefined ).
+	recv_response( C ).
 
+raw_packet( C, SeqID, Packet ) ->
+	ok = orca_conn_srv:send_packet( C, SeqID, Packet ).
+
+recv_response( C ) ->
+	recv_response( C, orca_conn_srv:recv_packet( C ), undefined ).
 
 %%% Internal %%%
 
@@ -124,5 +131,13 @@ result( err_packet, Props ) ->
 			(_, Acc) -> Acc
 		end,
 		#orca_error{}, Props),
-	{ok, OrcaError}.
+	{ok, OrcaError};
 
+result( request_local_file_content, Props ) ->
+	OrcaReqLocalFile = lists:foldl(
+		fun
+			({filename, Filename}, Acc) -> Acc #orca_request_local_file_content{ filename = Filename };
+			(_, Acc) -> Acc
+		end,
+		#orca_request_local_file_content{}, Props),
+	{ok, OrcaReqLocalFile}.
