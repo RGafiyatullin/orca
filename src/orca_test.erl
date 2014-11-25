@@ -14,6 +14,10 @@ all() ->
 		] ).
 
 db_url() -> <<"mysql://orca_test:orca_test_password@localhost/orca_test_db?pool_size=8&min_restart_interval=500">>.
+verbose_tcp() -> {callback_log_tcp, fun orca_default_callbacks:log_tcp_error_logger/3}.
+verbose_log() -> {callback_log, fun orca_default_callbacks:log_error_logger/2}.
+
+
 sql_table_create_test_1() ->
 	<<"CREATE TABLE test_1 ("
 		"  id BIGINT AUTO_INCREMENT NOT NULL"
@@ -66,4 +70,14 @@ test_02_gen( Mod, Orca ) ->
 	{ok, #orca_ok{}} = Mod:sql( Orca, <<"DELETE FROM test_1">> ),
 	{ok, #orca_ok{}} = Mod:sql( Orca, <<"DROP TABLE test_1">> ),
 	ok = Mod:shutdown( Orca, normal ).
+
+
+test_03_conn() ->
+	{ok, Conn} = orca_conn:start_link( db_url() ),
+	{ok, #orca_ok{}} = orca_conn:sql( Conn, <<"DROP TABLE IF EXISTS test_1">> ),
+	{ok, #orca_ok{}} = orca_conn:sql( Conn, sql_table_create_test_1() ),
+	_Whut = orca_conn:sql( Conn, <<"LOAD DATA LOCAL INFILE 'test-file' INTO TABLE test_1">> ).
+	% ok = orca_conn:shutdown( Conn, normal ).
+
+
 

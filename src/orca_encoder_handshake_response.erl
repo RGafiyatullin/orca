@@ -1,33 +1,20 @@
 -module (orca_encoder_handshake_response).
 -compile ({parse_transform, gin}).
 -export ([
-		auth/5
+		auth/6
 	]).
 -include("proto_consts.hrl").
 
 -define(character_set, 8). %% UTF-8
 -define(max_packet_size, 16#4000000). %% 64 MiBytes
 
-client_cap_flags() -> orca_caps:flags([
-		?CAP_CLIENT_PROTOCOL_41,
-
-		?CAP_CLIENT_LONG_FLAG,
-		?CAP_CLIENT_TRANSACTIONS,
-		?CAP_CLIENT_MULTI_STATEMENTS,
-		?CAP_CLIENT_MULTI_RESULTS,
-		?CAP_CLIENT_SECURE_CONNECTION,
-		?CAP_CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA,
-		?CAP_CLIENT_CONNECT_ATTRS
-	]).
-
-auth( Username, Password, DatabaseName, ConnAttrs, HandshakeProps )
+auth( Username, Password, DatabaseName, ClientCapFlags, ConnAttrs, HandshakeProps )
 	when is_binary( Username )
 	andalso is_binary( Password )
 	andalso is_binary( DatabaseName )
 ->
 	[ Username ] = binary:split( Username, <<0>> ),
 
-	CapFlags = client_cap_flags(),
 	MaxPacketSize = ?max_packet_size,
 	CharacterSet = ?character_set,
 
@@ -39,7 +26,7 @@ auth( Username, Password, DatabaseName, ConnAttrs, HandshakeProps )
 	AttrsRenderedLen_LenEncInt = len_enc_int( size(AttrsRendered) ),
 
 	{ok, <<
-		CapFlags:32/little,
+		ClientCapFlags:32/little,
 		MaxPacketSize:32/little,
 		CharacterSet:8/integer,
 		0:(23 * 8)/little, %% Reserved

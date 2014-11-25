@@ -8,6 +8,7 @@
 		sql/2, sql/3,
 		process_info/1,
 		process_kill/2,
+		quit/1,
 		raw_packet/2
 	]).
 -include("orca.hrl").
@@ -22,10 +23,13 @@ start_link( Url, Opts ) ->
 	ConnPassword = proplists:get_value( password, ConnProps ),
 	ConnDbName = proplists:get_value( db_name, ConnProps ),
 
+	ClientCapFlags = orca_caps:cap_flags_from_opts( Opts ),
+
 	{ok, Conn} = orca_conn_srv:start_link(ConnHost, ConnPort, [{active, false} | Opts]),
 	{ok, PacketHandshakeReq} = orca_conn_srv:recv_packet( Conn ),
 	{ok, {handshake_request, PropsHandshakeReq}} = orca_decoder_handshake:decode( PacketHandshakeReq ),
-	{ok, PacketHandshakeResp} = orca_encoder_handshake_response:auth( ConnUser, ConnPassword, ConnDbName, [], PropsHandshakeReq ),
+	{ok, PacketHandshakeResp} = orca_encoder_handshake_response:auth(
+		ConnUser, ConnPassword, ConnDbName, ClientCapFlags, [], PropsHandshakeReq ),
 	ok = orca_conn_srv:send_packet( Conn, 1, PacketHandshakeResp ),
 	{ok, PacketAuthResult} = orca_conn_srv:recv_packet( Conn ),
 	{ok, {TypeAuthResult, PropsAuthResult}} = orca_decoder_generic_response:decode( PacketAuthResult ),
@@ -57,6 +61,10 @@ sql( C, Q ) -> sql( C, Q, [] ).
 sql( C, Q, A ) ->
 	{ok, ComQuery} = orca_encoder_com:com_query( Q, A ),
 	raw_packet( C, ComQuery ).
+
+quit( C ) ->
+	{ok, ComQuit} = orca_encoder_com:com_quit(),
+	raw_packet( C, ComQuit ).
 
 process_info( C ) ->
 	{ok, ComProcessInfo} = orca_encoder_com:com_process_info(),

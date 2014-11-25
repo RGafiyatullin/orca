@@ -22,6 +22,8 @@
 -spec start_link( inet_host(), inet_port(), [option()] ) -> {ok, pid()} | {error, Reason :: term()}.
 
 -define( callback_log, {?MODULE, callback_log} ).
+-define( callback_log_tcp, {?MODULE, callback_log_tcp} ).
+
 -define( set_active( Mode ), {set_active, Mode} ).
 -define( send_packet( SeqID, Packet ), {send_packet, SeqID, Packet} ).
 -define( recv_packet(), recv_packet ).
@@ -78,8 +80,12 @@ shutdown( Srv, Reason ) when is_pid( Srv ) ->
 enter_loop( Host, Port, Opts ) ->
 	{controlling_process, ControllingProcess} = lists:keyfind( controlling_process, 1, Opts ),
 	InitialActiveMode = proplists:get_value( active, Opts, false ),
+
 	LogF = proplists:get_value( callback_log, Opts, fun orca_default_callbacks:log_error_logger/2 ),
 	undefined = erlang:put( ?callback_log, LogF ),
+	TcpLogF = proplists:get_value( callback_log_tcp, Opts, fun orca_default_callbacks:log_tcp_null/3 ),
+	undefined = erlang:put( ?callback_log_tcp, TcpLogF ),
+
 	case orca_tcp:open( Host, Port ) of
 		{ok, Tcp} ->
 			ok = proc_lib:init_ack( {ok, self()} ),
@@ -156,6 +162,7 @@ handle_info( {MsgClosed, MsgPort}, State = #s{ msg_closed = MsgClosed, msg_port 
 	handle_info_closed( State );
 
 handle_info( {MsgData, MsgPort, Data}, State = #s{ msg_data = MsgData, msg_port = MsgPort } ) ->
+	ok = log_tcp( self(), in, Data ),
 	handle_info_data( Data, State );
 
 handle_info( Message, State = #s{} ) ->
@@ -206,7 +213,9 @@ handle_info_closed( State0 ) ->
 handle_cast_send_packet( SeqID, Packet, State = #s{ tcp = Tcp } ) ->
 	PacketLen = size(Packet),
 	PacketHeader = << PacketLen:24/little, SeqID:8/integer >>,
-	ok = orca_tcp:send( Tcp, [PacketHeader, Packet] ),
+	DataToSend = iolist_to_binary([PacketHeader, Packet]),
+	ok = log_tcp( self(), out, DataToSend ),
+	ok = orca_tcp:send( Tcp, DataToSend ),
 	{noreply, State, ?hib_timeout}.
 
 handle_info_timeout( State ) ->
@@ -273,4 +282,7 @@ deliver_packet( ControllingProcess, Packet ) when is_pid( ControllingProcess ) a
 
 log_report( Lvl, Report ) when in( Lvl, [info, warning, error] ) ->
 	ok = (erlang:get(?callback_log)) ( Lvl, Report ).
+
+log_tcp( Conn, Direction, Data ) ->
+	ok = (erlang:get(?callback_log_tcp)) ( Conn, Direction, Data ).
 

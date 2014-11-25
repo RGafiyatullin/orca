@@ -95,6 +95,7 @@ execute_result( {ok, {result_set_raw, RawProps}} ) ->
 		conn_opts :: [ term() ]
 	}).
 -record(s, {
+		client_cap_flags :: non_neg_integer(),
 		lb :: orca_conn_mgr_lb:ctx(),
 		pool_size :: pos_integer(),
 		conn_props :: #conn_props{},
@@ -105,6 +106,8 @@ init( _ ) -> {error, enter_loop_used}.
 enter_loop(?init_args( User, Password, Host, Port, Database, PoolSize, MinRestartInterval, ConnOpts )) ->
 	LogF = proplists:get_value( callback_log, ConnOpts, fun orca_default_callbacks:log_error_logger/2 ),
 	undefined = erlang:put( ?callback_log, LogF ),
+
+	ClientCapFlags = orca_caps:cap_flags_from_opts( ConnOpts ),
 	ConnProps = #conn_props{
 			user = User,
 			password = Password,
@@ -115,6 +118,7 @@ enter_loop(?init_args( User, Password, Host, Port, Database, PoolSize, MinRestar
 	{ok, ConnPool} = init_conn_pool( PoolSize, MinRestartInterval, Host, Port, ConnOpts ),
 	{ok, LB} = orca_conn_mgr_lb:new(),
 	S0 = #s{
+			client_cap_flags = ClientCapFlags,
 			lb = LB,
 			pool_size = PoolSize,
 			conn_props = ConnProps,
@@ -215,11 +219,13 @@ handle_call_shutdown( Reason, _GenReplyTo, State = #s{ conn_pool = #conn_pool{ s
 handle_info_packet_handshake(
 		WorkerPid, HandshakeReqBin,
 		State = #s{
+				client_cap_flags = ClientCapFlags,
 				conn_props = #conn_props{ user = User, password = Password, database = Database }
 			} ) ->
 	{ok, {handshake_request, HandshakeReqProps}} = orca_decoder_handshake:decode( HandshakeReqBin ),
 	{ok, HandshakeRespBin} = orca_encoder_handshake_response:auth(
-		User, Password, Database, [
+		User, Password, Database,
+		ClientCapFlags, [
 			{client, orca},
 			{pid, pid_to_list(WorkerPid)}
 		], HandshakeReqProps ),
