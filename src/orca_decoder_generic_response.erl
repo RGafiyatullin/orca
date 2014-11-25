@@ -10,7 +10,7 @@
 -record( expect_eof_before_rows, { field_def_packets :: [ binary() ] } ).
 -record( expect_row_or_eof, { field_def_packets :: [ binary() ], rows_rev_acc :: [ binary() ] } ).
 
--type packet_type() :: ok_packet | err_packet.
+-type packet_type() :: ok_packet | err_packet | request_local_file_content.
 -type packet_prop() :: {atom(), term()}.
 -type incomplete_ctx() :: #expect_field{} | #expect_eof_before_rows{} | #expect_row_or_eof{}.
 -spec decode( binary() ) ->

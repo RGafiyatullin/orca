@@ -58,12 +58,24 @@ worker_fetch_job( W0 = #worker{ reply_to_queue = RTQ, reply_to_queue_size = RTQS
 	{ok, GenReplyTo, W0 #worker{ reply_to_queue = queue:drop( RTQ ), reply_to_queue_size = RTQS - 1 }}.
 
 worker_insert( W = #worker{ reply_to_queue_size = QS }, Ws0 ) ->
-	{WsLeft, WsRight} = zip_right_till(
+	{WsLeft, WsRight} = zip( right,
 		fun( _Left, [ #worker{ reply_to_queue_size = WCurrentQS } | _Right ] ) ->
 			WCurrentQS < QS
 		end, {[], Ws0} ),
-	{[], Ws1} = zip_left_till( fun( _, _ ) -> true end, {WsLeft, [ W | WsRight ]} ),
+	{[], Ws1} = zip( left, fun( _, _ ) -> true end, {WsLeft, [ W | WsRight ]} ),
 	{ok, Ws1}.
+
+
+-spec zip( left | right, fun(( [T], [T] ) -> boolean()), {[T], [T]} ) -> {[T], [T]}.
+-spec zip_right_till( fun(( [T], [T] ) -> boolean()), {[T], [T]} ) -> {[T], [T]}.
+-spec zip_left_till( fun(( [T], [T] ) -> boolean()), {[T], [T]} ) -> {[T], [T]}.
+
+
+zip( Direction, F, {L, R} ) ->
+	case Direction of
+		left -> zip_left_till( F, {L, R} );
+		right -> zip_right_till( F, {L, R} )
+	end.
 
 zip_right_till( _, {L, []} ) -> {L, []};
 zip_right_till( F, {L, CandR = [ C | R ]} ) ->
@@ -71,6 +83,7 @@ zip_right_till( F, {L, CandR = [ C | R ]} ) ->
 		false -> {L, CandR};
 		true -> zip_right_till( F, {[ C | L ], R} )
 	end.
+
 zip_left_till( _, {[], R} ) -> {[], R};
 zip_left_till( F, {CandL = [ C | L ], R} ) ->
 	case F( CandL, R ) of

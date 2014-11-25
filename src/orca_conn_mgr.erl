@@ -109,7 +109,7 @@ execute_result( {ok, {result_set_raw, RawProps}} ) ->
 		conn_pool :: #conn_pool{}
 	}).
 
-init( _ ) -> {error, enter_loop_used}.
+init( _ ) -> {stop, {error, enter_loop_used}}.
 enter_loop(?init_args( User, Password, Host, Port, Database, PoolSize, MinRestartInterval, ConnOpts )) ->
 	LogF = proplists:get_value( callback_log, ConnOpts, fun orca_default_callbacks:log_error_logger/2 ),
 	undefined = erlang:put( ?callback_log, LogF ),
@@ -388,7 +388,7 @@ conn_pool_worker_start( Idx, ConnPool0 = #conn_pool{ conn_opts = ConnOpts, worke
 					ConnPool1 = ConnPool0 #conn_pool{ workers = [ W1 | Workers1 ] },
 					{ok, _ConnPool2} = maybe_restart_worker( Idx, ConnPool1 )
 			end;
-		{value, #pool_worker{ pid = WorkerPid }} when is_pid( WorkerPid ) ->
+		{value, #pool_worker{ pid = WorkerPid }, _Workers1} when is_pid( WorkerPid ) ->
 			{ok, ConnPool0}
 	end.
 

@@ -24,8 +24,7 @@ open( Host, Port ) when ?is_inet_port( Port ) ->
 			{ok, #orca_tcp{
 					sock = Sock
 				}};
-		{error, Reason} -> {error, Reason};
-		Unexpected -> {error, {unexpected_ret_value, Unexpected}}
+		{error, Reason} -> {error, Reason}
 	end.
 
 activate( #orca_tcp{ sock = Sock } ) -> inet:setopts( Sock, [ {active, once} ] ).

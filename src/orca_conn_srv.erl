@@ -31,7 +31,7 @@
 -spec start_link( inet_host(), inet_port(), [ conn_opt() ] ) -> {ok, pid()}.
 -spec set_active( pid(), once | true | false ) -> ok.
 -spec send_packet( pid(), non_neg_integer(), binary() ) -> ok.
--spec recv_packet( pid() ) -> {ok, binary()}.
+-spec recv_packet( pid() ) -> {ok, binary()} | {error, term()}.
 -spec shutdown( pid(), term() ) -> ok.
 
 start_link( Host, Port ) -> start_link( Host, Port, [] ).
@@ -119,7 +119,7 @@ enter_loop( Host, Port, Opts ) ->
 			exit(shutdown)
 	end.
 
-init( _ ) -> {error, enter_loop_used}.
+init( _ ) -> {stop, {error, enter_loop_used}}.
 
 handle_call( ?shutdown( Reason ), GenReplyTo, State ) ->
 	handle_call_shutdown( Reason, GenReplyTo, State );

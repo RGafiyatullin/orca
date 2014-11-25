@@ -16,7 +16,7 @@
 -include ("orca.hrl").
 -include ("types.hrl").
 
--type generic_response() :: #orca_ok{} | #orca_rows{} | #orca_error{}.
+-type generic_response() :: #orca_ok{} | #orca_rows{} | #orca_error{} | #orca_request_local_file_content{}.
 -type query_text() :: iolist() | binary().
 
 -spec start_link( db_url() ) -> {ok, pid()}.
