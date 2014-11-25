@@ -1,7 +1,8 @@
 -module (orca_conn).
 -compile ({parse_transform, gin}).
 -export ([
-		start_link/1,
+		start_link/1, start_link/2,
+		shutdown/2,
 		init_db/2,
 		ping/1,
 		sql/2, sql/3,
@@ -11,7 +12,9 @@
 	]).
 -include("orca.hrl").
 
-start_link( Url ) ->
+start_link( Url ) -> start_link( Url, [] ).
+
+start_link( Url, Opts ) ->
 	{ok, ConnProps} = orca_url:parse( Url ),
 	ConnHost = proplists:get_value( host, ConnProps ),
 	ConnPort = proplists:get_value( port, ConnProps ),
@@ -19,7 +22,7 @@ start_link( Url ) ->
 	ConnPassword = proplists:get_value( password, ConnProps ),
 	ConnDbName = proplists:get_value( db_name, ConnProps ),
 
-	{ok, Conn} = orca_conn_srv:start_link(ConnHost, ConnPort, [{active, false}]),
+	{ok, Conn} = orca_conn_srv:start_link(ConnHost, ConnPort, [{active, false} | Opts]),
 	{ok, PacketHandshakeReq} = orca_conn_srv:recv_packet( Conn ),
 	{ok, {handshake_request, PropsHandshakeReq}} = orca_decoder_handshake:decode( PacketHandshakeReq ),
 	{ok, PacketHandshakeResp} = orca_encoder_handshake_response:auth( ConnUser, ConnPassword, ConnDbName, [], PropsHandshakeReq ),
@@ -38,6 +41,9 @@ start_link( Url ) ->
 			end;
 		err_packet -> {error, {auth, PropsAuthResult}}
 	end.
+
+shutdown( OrcaConn, Reason ) when is_pid( OrcaConn ) ->
+	ok = orca_conn_srv:shutdown( OrcaConn, Reason ).
 
 init_db( C, Db ) ->
 	{ok, ComInitDb} = orca_encoder_com:com_init_db( Db ),

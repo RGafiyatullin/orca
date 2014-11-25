@@ -5,6 +5,7 @@
 -export ([ start_link/2, start_link/3 ]).
 -export ([ set_active/2 ]).
 -export ([ send_packet/3, recv_packet/1 ]).
+-export ([ shutdown/2 ]).
 -export ([
 		init/1, enter_loop/3,
 		handle_call/3,
@@ -20,10 +21,12 @@
 -spec start_link( inet_host(), inet_port() ) -> {ok, pid()} | {error, Reason :: term()}.
 -spec start_link( inet_host(), inet_port(), [option()] ) -> {ok, pid()} | {error, Reason :: term()}.
 
+-define( callback_log, {?MODULE, callback_log} ).
 -define( set_active( Mode ), {set_active, Mode} ).
 -define( send_packet( SeqID, Packet ), {send_packet, SeqID, Packet} ).
 -define( recv_packet(), recv_packet ).
 -define( recv_default_timeout, 5000 ).
+-define( shutdown( Reason ), {shutdown, Reason} ).
 
 -define( hib_timeout, 5000 ).
 
@@ -48,6 +51,10 @@ send_packet( Srv, SeqID, Packet )
 recv_packet( Srv ) when is_pid( Srv ) ->
 	gen_server:call( Srv, ?recv_packet(), ?recv_default_timeout ).
 
+shutdown( Srv, Reason ) when is_pid( Srv ) ->
+	gen_server:call( Srv, ?shutdown( Reason ) ).
+
+
 -record(s, {
 		host :: inet_host(),
 		port :: inet_port(),
@@ -69,11 +76,13 @@ recv_packet( Srv ) when is_pid( Srv ) ->
 	}).
 
 enter_loop( Host, Port, Opts ) ->
+	{controlling_process, ControllingProcess} = lists:keyfind( controlling_process, 1, Opts ),
+	InitialActiveMode = proplists:get_value( active, Opts, false ),
+	LogF = proplists:get_value( callback_log, Opts, fun orca_default_callbacks:log_error_logger/2 ),
+	undefined = erlang:put( ?callback_log, LogF ),
 	case orca_tcp:open( Host, Port ) of
 		{ok, Tcp} ->
 			ok = proc_lib:init_ack( {ok, self()} ),
-			{controlling_process, ControllingProcess} = lists:keyfind( controlling_process, 1, Opts ),
-			InitialActiveMode = proplists:get_value( active, Opts, false ),
 			{MsgData, MsgClosed, MsgError, MsgPort} = orca_tcp:messages( Tcp ),
 			ResponseCtx = orca_response:new(),
 			ControllingProcessMonRef = erlang:monitor( process, ControllingProcess ),
@@ -104,11 +113,14 @@ enter_loop( Host, Port, Opts ) ->
 
 init( _ ) -> {error, enter_loop_used}.
 
+handle_call( ?shutdown( Reason ), GenReplyTo, State ) ->
+	handle_call_shutdown( Reason, GenReplyTo, State );
+
 handle_call( ?recv_packet(), GenReplyTo, State = #s{} ) ->
 	handle_call_recv_packet( GenReplyTo, State );
 
 handle_call(Request, From, State = #s{}) ->
-	error_logger:warning_report([
+	ok = log_report(warning, [
 			?MODULE, handle_call,
 			{bad_call, Request},
 			{from, From}
@@ -122,7 +134,7 @@ handle_cast( ?send_packet( SeqID, Packet ), State ) ->
 	handle_cast_send_packet( SeqID, Packet, State );
 
 handle_cast(Request, State = #s{}) ->
-	error_logger:warning_report([
+	ok = log_report(warning, [
 				?MODULE, handle_cast,
 				{bad_cast, Request}
 			]),
@@ -147,7 +159,7 @@ handle_info( {MsgData, MsgPort, Data}, State = #s{ msg_data = MsgData, msg_port 
 	handle_info_data( Data, State );
 
 handle_info( Message, State = #s{} ) ->
-	error_logger:warning_report([
+	ok = log_report(warning, [
 				?MODULE, handle_info,
 				{bad_info, Message}
 			]),
@@ -170,13 +182,15 @@ opts_ensure_controlling_process( Opts0 ) ->
 			{controlling_process, _} -> Opts0
 		end.
 
+handle_call_shutdown( Reason, _GenReplyTo, State ) ->
+	{stop, Reason, ok, State}.
+
 handle_cast_set_active( Mode, State0 = #s{} ) ->
 	State1 = State0 #s{ active = Mode },
 	{ok, State2} = maybe_deliver_packets( State1 ),
 	{noreply, State2, ?hib_timeout}.
 
 handle_info_data( Data, State0 = #s{ response_ctx = ResponseCtx0 } ) ->
-	% error_logger:info_report([?MODULE, handle_info_data, {data, Data}]),
 	{ok, ResponseCtx1} = orca_response:data_in( Data, ResponseCtx0 ),
 	State1 = State0 #s{ response_ctx = ResponseCtx1 },
 	{ok, State2} = maybe_deliver_packets( State1 ),
@@ -190,7 +204,6 @@ handle_info_closed( State0 ) ->
 	% {noreply, State0}.
 
 handle_cast_send_packet( SeqID, Packet, State = #s{ tcp = Tcp } ) ->
-	% error_logger:info_report([?MODULE, handle_cast_send_packet]),
 	PacketLen = size(Packet),
 	PacketHeader = << PacketLen:24/little, SeqID:8/integer >>,
 	ok = orca_tcp:send( Tcp, [PacketHeader, Packet] ),
@@ -236,7 +249,6 @@ maybe_deliver_packets(
 		}} = maybe_deliver_packets_to_sync_recipients( State0 ),
 	case orca_response:get_packet( ResponseCtx0 ) of
 		{error, not_ready} ->
-			% error_logger:info_report([?MODULE, maybe_deliver_packets, packet_q_empty]),
 			maybe_activate_tcp( State1 );
 		{ok, Packet, ResponseCtx1} ->
 			ok = deliver_packet( ControllingProcess, Packet ),
@@ -252,13 +264,13 @@ maybe_deliver_packets(
 maybe_activate_tcp( State0 = #s{ active = false } ) -> {ok, State0};
 maybe_activate_tcp( State0 = #s{ active = ShouldActivate, tcp = Tcp } )
 	when in( ShouldActivate, [ true, once ] ) ->
-		% error_logger:info_report([?MODULE, maybe_activate_tcp]),
 		ok = orca_tcp:activate( Tcp ),
 		{ok, State0}.
 
-
-
 deliver_packet( ControllingProcess, Packet ) when is_pid( ControllingProcess ) andalso is_binary( Packet ) ->
-	% error_logger:info_report([?MODULE, deliver_packet, {packet, Packet}]),
 	_ = erlang:send( ControllingProcess, {orca_packet, self(), Packet} ),
 	ok.
+
+log_report( Lvl, Report ) when in( Lvl, [info, warning, error] ) ->
+	ok = (erlang:get(?callback_log)) ( Lvl, Report ).
+

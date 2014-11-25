@@ -1,5 +1,5 @@
 -module (orca).
--export ([start_link/1]).
+-export ([start_link/1, start_link/2]).
 -export ([
 		ping/1,
 		sql/3, sql/2,
@@ -11,7 +11,8 @@
 
 -include("orca.hrl").
 
-start_link( Url ) -> orca_conn_mgr:start_link( Url ).
+start_link( Url ) -> start_link( Url, [] ).
+start_link( Url, Opts ) -> orca_conn_mgr:start_link( Url, Opts ).
 
 ping( ConnMgr ) ->
 	{ok, ComPing} = orca_encoder_com:com_ping(),

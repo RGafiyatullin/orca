@@ -2,7 +2,7 @@
 -compile ({parse_transform, gin}).
 -behaviour (gen_server).
 
--export ([start_link/1]).
+-export ([start_link/2]).
 -export ([execute/2, execute/3]).
 -export ([
 		init/1, enter_loop/1,
@@ -14,13 +14,14 @@
 	]).
 -include("types.hrl").
 
+-define(callback_log, {?MODULE, callback_log}).
 -define(hib_timeout, 5000).
 -define(is_timeout( Timeout ), ( Timeout == infinity orelse (is_integer(Timeout) andalso Timeout > 0) ) ).
 -define(execute( PacketBin ), {execute, PacketBin}).
 
 -define(
-	init_args( User, Password, Host, Port, Database, PoolSize, MinRestartInterval ),
-	{init_args, User, Password, Host, Port, Database, PoolSize, MinRestartInterval} ).
+	init_args( User, Password, Host, Port, Database, PoolSize, MinRestartInterval, ConnOpts ),
+	{init_args, User, Password, Host, Port, Database, PoolSize, MinRestartInterval, ConnOpts} ).
 -define(
 	orca_packet( ConnSrv, PacketBin ),
 	{orca_packet, ConnSrv, PacketBin} ).
@@ -28,9 +29,9 @@
 	worker_start(Idx),
 	{worker_start, Idx}).
 
-start_link( Url ) when is_binary( Url ) ->
-	start_link( binary_to_list( Url ) );
-start_link( Url = [ $m, $y, $s, $q, $l, $:, $/, $/ | _ ] ) ->
+start_link( Url, ConnOpts ) when is_binary( Url ) ->
+	start_link( binary_to_list( Url ), ConnOpts );
+start_link( Url = [ $m, $y, $s, $q, $l, $:, $/, $/ | _ ], ConnOpts ) ->
 	{ok, ConnProps} = orca_url:parse( Url ),
 	ConnHost = proplists:get_value( host, ConnProps ),
 	ConnPort = proplists:get_value( port, ConnProps ),
@@ -44,7 +45,8 @@ start_link( Url = [ $m, $y, $s, $q, $l, $:, $/, $/ | _ ] ) ->
 	InitArgs = ?init_args(
 					ConnUser, ConnPassword,
 					ConnHost, ConnPort,
-					ConnDbName, PoolSize, MinRestartInterval ),
+					ConnDbName, PoolSize, MinRestartInterval,
+					ConnOpts ),
 	proc_lib:start_link( ?MODULE, enter_loop, [InitArgs] ).
 
 execute( Srv, PacketBin ) ->
@@ -82,7 +84,8 @@ execute_result( {ok, {result_set_raw, RawProps}} ) ->
 -record(conn_pool, {
 		sup :: pid(),
 		workers = [] :: [ #pool_worker{} ],
-		min_restart_interval :: non_neg_integer()
+		min_restart_interval :: non_neg_integer(),
+		conn_opts :: [ term() ]
 	}).
 -record(s, {
 		lb :: orca_conn_mgr_lb:ctx(),
@@ -92,7 +95,9 @@ execute_result( {ok, {result_set_raw, RawProps}} ) ->
 	}).
 
 init( _ ) -> {error, enter_loop_used}.
-enter_loop(?init_args( User, Password, Host, Port, Database, PoolSize, MinRestartInterval )) ->
+enter_loop(?init_args( User, Password, Host, Port, Database, PoolSize, MinRestartInterval, ConnOpts )) ->
+	LogF = proplists:get_value( callback_log, ConnOpts, fun orca_default_callbacks:log_error_logger/2 ),
+	undefined = erlang:put( ?callback_log, LogF ),
 	ConnProps = #conn_props{
 			user = User,
 			password = Password,
@@ -100,7 +105,7 @@ enter_loop(?init_args( User, Password, Host, Port, Database, PoolSize, MinRestar
 			port = Port,
 			database = Database
 		},
-	{ok, ConnPool} = init_conn_pool( PoolSize, MinRestartInterval, Host, Port ),
+	{ok, ConnPool} = init_conn_pool( PoolSize, MinRestartInterval, Host, Port, ConnOpts ),
 	{ok, LB} = orca_conn_mgr_lb:new(),
 	S0 = #s{
 			lb = LB,
@@ -116,7 +121,7 @@ handle_call( ?execute( PacketBin ), GenReplyTo, State ) when is_binary( PacketBi
 	handle_call_execute( PacketBin, GenReplyTo, State );
 
 handle_call(Request, From, State = #s{}) ->
-	error_logger:warning_report([
+	log_report( warning, [
 			?MODULE, handle_call,
 			{bad_call, Request},
 			{from, From}
@@ -124,7 +129,7 @@ handle_call(Request, From, State = #s{}) ->
 	{reply, {badarg, Request}, State, ?hib_timeout}.
 
 handle_cast(Request, State = #s{}) ->
-	error_logger:warning_report([
+	log_report( warning, [
 				?MODULE, handle_cast,
 				{bad_cast, Request}
 			]),
@@ -140,7 +145,7 @@ handle_info( ?orca_packet( WorkerPid, PacketBin ), State ) ->
 		expect_init_db_result -> handle_info_init_db_result( WorkerPid, PacketBin, State );
 		{ready, DecodeCtx} -> handle_info_packet_generic( WorkerPid, PacketBin, DecodeCtx, State );
 		WState ->
-			error_logger:warning_report([
+			log_report( warning, [
 					?MODULE, handle_info,
 					{unexpected_packet, PacketBin},
 					{from, WorkerPid}, {with_wstate, WState}
@@ -155,7 +160,7 @@ handle_info( {'DOWN', Ref, process, Pid, Reason}, State = #s{} ) ->
 	handle_info_down( Ref, Pid, Reason, State );
 
 handle_info( Message, State = #s{} ) ->
-	error_logger:warning_report([
+	log_report( warning, [
 				?MODULE, handle_info,
 				{bad_info, Message}
 			]),
@@ -171,7 +176,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal %%%
 %%% %%%%%%%% %%%
 
-init_conn_pool( PoolSize, MinRestartInterval, Host, Port ) ->
+init_conn_pool( PoolSize, MinRestartInterval, Host, Port, ConnOpts ) ->
 	{ok, Sup} = simplest_one_for_one:start_link( {orca_conn_srv, start_link, [ Host, Port ]} ),
 	Pool = #conn_pool{
 			sup = Sup,
@@ -179,7 +184,8 @@ init_conn_pool( PoolSize, MinRestartInterval, Host, Port ) ->
 					#pool_worker{ idx = Idx }
 					|| Idx <- lists:seq(0, PoolSize - 1)
 				],
-			min_restart_interval = MinRestartInterval
+			min_restart_interval = MinRestartInterval,
+			conn_opts = ConnOpts
 		},
 	{ok, Pool}.
 
@@ -224,7 +230,7 @@ handle_info_packet_auth_result(
 			ok = orca_conn_srv:set_active( WorkerPid, once ),
 			ok = worker_state( WorkerPid, expect_closed ),
 
-			ok = error_logger:warning_report([
+			ok = log_report( warning, [
 					?MODULE, handle_info_packet_auth_result, auth_failure
 					| AuthResultProps
 				]),
@@ -247,7 +253,7 @@ handle_info_init_db_result( WorkerPid, PacketBin, State = #s{ lb = LB0 } ) ->
 			ok = orca_conn_srv:set_active( WorkerPid, once ),
 			ok = worker_state( WorkerPid, expect_closed ),
 
-			ok = error_logger:warning_report([
+			ok = log_report( warning, [
 					?MODULE, handle_info_init_db_result, init_db_failure
 					| InitDbResultProps
 				]),
@@ -262,13 +268,13 @@ handle_info_down( Ref, Pid, Reason, State0 = #s{ conn_pool = ConnPool0, lb = LB0
 	Workers0 = ConnPool0 #conn_pool.workers,
 	case lists:keytake( Ref, #pool_worker.mon, Workers0 ) of
 		false ->
-			ok = error_logger:warning_report([
+			ok = log_report( warning, [
 					?MODULE, handle_info_down,
 					unexpected_down_msg, {pid, Pid}, {reason, Reason}
 				]),
 			{noreply, State0, ?hib_timeout};
 		{value, W0 = #pool_worker{ idx = Idx, pid = Pid, mon = Ref }, Workers1} ->
-			ok = error_logger:warning_report([
+			ok = log_report( warning, [
 					?MODULE, handle_info_down,
 					worker_down, {idx, Idx}, {pid, Pid}, {reason, Reason}
 				]),
@@ -336,9 +342,9 @@ now_ms() ->
 	{MegS, S, MuS} = erlang:now(),
 	(((MegS * 1000000) + S) * 1000) + (MuS div 1000).
 
-conn_pool_worker_start( Idx, ConnPool0 = #conn_pool{ workers = Workers0, sup = Sup } ) ->
+conn_pool_worker_start( Idx, ConnPool0 = #conn_pool{ conn_opts = ConnOpts, workers = Workers0, sup = Sup } ) ->
 	MgrPid = self(),
-	ConnInitialOpts = [ {active, once}, {controlling_process, MgrPid} ],
+	ConnInitialOpts = [ {active, once}, {controlling_process, MgrPid} | ConnOpts ],
 	case lists:keytake( Idx, #pool_worker.idx, Workers0 ) of
 		{value, W0 = #pool_worker{ pid = undefined, mon = undefined }, Workers1} ->
 			case supervisor:start_child( Sup, [ ConnInitialOpts ] ) of
@@ -349,7 +355,7 @@ conn_pool_worker_start( Idx, ConnPool0 = #conn_pool{ workers = Workers0, sup = S
 
 					{ok, ConnPool0 #conn_pool{ workers = [ W1 | Workers1 ] }};
 				{error, StartChildError} ->
-					error_logger:warning_report([?MODULE, conn_pool_worker_start,
+					log_report( warning, [?MODULE, conn_pool_worker_start,
 						{idx, Idx}, {failed_to_start_worker, StartChildError} ]),
 					W1 = W0 #pool_worker{ last_start = now_ms() },
 					ConnPool1 = ConnPool0 #conn_pool{ workers = [ W1 | Workers1 ] },
@@ -363,5 +369,6 @@ worker_state( WorkerPid, undefined ) -> _ = erlang:erase( {worker_state, WorkerP
 worker_state( WorkerPid, WState ) -> _ = erlang:put( {worker_state, WorkerPid}, WState ), ok.
 worker_state( WorkerPid ) -> erlang:get( {worker_state, WorkerPid} ).
 
-
+log_report( Lvl, Report ) when in( Lvl, [ info, warning, error ] ) ->
+	ok = ( erlang:get( ?callback_log ) ) ( Lvl, Report ).
 
