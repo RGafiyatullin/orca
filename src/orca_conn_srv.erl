@@ -16,11 +16,6 @@
 	]).
 -include ("types.hrl").
 
--type option() :: { term(), term() }.
-
--spec start_link( inet_host(), inet_port() ) -> {ok, pid()} | {error, Reason :: term()}.
--spec start_link( inet_host(), inet_port(), [option()] ) -> {ok, pid()} | {error, Reason :: term()}.
-
 -define( callback_log, {?MODULE, callback_log} ).
 -define( callback_log_tcp, {?MODULE, callback_log_tcp} ).
 
@@ -31,6 +26,13 @@
 -define( shutdown( Reason ), {shutdown, Reason} ).
 
 -define( hib_timeout, 5000 ).
+
+-spec start_link( inet_host(), inet_port() ) -> {ok, pid()}.
+-spec start_link( inet_host(), inet_port(), [ conn_opt() ] ) -> {ok, pid()}.
+-spec set_active( pid(), once | true | false ) -> ok.
+-spec send_packet( pid(), non_neg_integer(), binary() ) -> ok.
+-spec recv_packet( pid() ) -> {ok, binary()}.
+-spec shutdown( pid(), term() ) -> ok.
 
 start_link( Host, Port ) -> start_link( Host, Port, [] ).
 start_link( Host, Port, Opts0 ) when ?is_inet_port( Port ) ->
@@ -60,7 +62,7 @@ shutdown( Srv, Reason ) when is_pid( Srv ) ->
 -record(s, {
 		host :: inet_host(),
 		port :: inet_port(),
-		opts :: [ option() ],
+		opts :: [ conn_opt() ],
 
 		tcp :: orca_tcp:conn(),
 		msg_port :: term(),

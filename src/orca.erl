@@ -7,12 +7,25 @@
 		ping/1,
 		sql/3, sql/2,
 		process_info/1,
-		process_kill/2,
+		process_kill/2
 		% create_db/2, drop_db/2,
-		raw_packet/2
+		% raw_packet/2
 	]).
 
--include("orca.hrl").
+-include ("orca.hrl").
+-include ("types.hrl").
+
+-type generic_response() :: #orca_ok{} | #orca_rows{} | #orca_error{}.
+-type query_text() :: iolist() | binary().
+
+-spec start_link( db_url() ) -> {ok, pid()}.
+-spec start_link( db_url(), [ conn_opt() ] ) -> {ok, pid()}.
+-spec ping( pid() ) -> {ok, #orca_ok{}} | {error, term()}.
+-spec sql( pid(), query_text() ) -> {ok, generic_response()} | {error, term()}.
+-spec sql( pid(), query_text(), [ term() ] ) -> {ok, generic_response()} | {error, term()}.
+-spec process_info( pid() ) -> {ok, #orca_rows{} | #orca_error{}} | {error, term()}.
+-spec process_kill( pid(), non_neg_integer() ) -> {ok, #orca_ok{} | #orca_error{}} | {error, term()}.
+-spec shutdown( pid(), Reason :: term() ) -> ok.
 
 start_link( Url ) -> start_link( Url, [] ).
 start_link( Url, Opts ) -> orca_conn_mgr:start_link( Url, Opts ).

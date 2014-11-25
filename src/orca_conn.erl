@@ -13,7 +13,20 @@
 		raw_packet/3,
 		recv_response/1
 	]).
--include("orca.hrl").
+-include ("orca.hrl").
+-include ("types.hrl").
+
+-type generic_response() :: #orca_ok{} | #orca_rows{} | #orca_error{}.
+-type query_text() :: iolist() | binary().
+
+-spec start_link( db_url() ) -> {ok, pid()}.
+-spec start_link( db_url(), [ conn_opt() ] ) -> {ok, pid()}.
+-spec ping( pid() ) -> {ok, #orca_ok{}} | {error, term()}.
+-spec sql( pid(), query_text() ) -> {ok, generic_response()} | {error, term()}.
+-spec sql( pid(), query_text(), [ term() ] ) -> {ok, generic_response()} | {error, term()}.
+-spec process_info( pid() ) -> {ok, #orca_rows{} | #orca_error{}} | {error, term()}.
+-spec process_kill( pid(), non_neg_integer() ) -> {ok, #orca_ok{} | #orca_error{}} | {error, term()}.
+-spec shutdown( pid(), Reason :: term() ) -> ok.
 
 start_link( Url ) -> start_link( Url, [] ).
 

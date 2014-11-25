@@ -33,6 +33,13 @@
 	shutdown( Reason ),
 	{shutdown, Reason} ).
 
+-spec start_link( db_url(), [ conn_opt() ] ) -> {ok, pid()}.
+-spec shutdown( pid(), term() ) -> ok.
+-spec execute( pid(), binary() ) ->
+	{ok, {ok_packet | err_packet | result_set, [ {atom(), term()} ]}} | {error, term()}.
+-spec execute( pid(), binary(), timeout() ) ->
+	{ok, {ok_packet | err_packet | result_set, [ {atom(), term()} ]}} | {error, term()}.
+
 start_link( Url, ConnOpts ) when is_binary( Url ) ->
 	start_link( binary_to_list( Url ), ConnOpts );
 start_link( Url = [ $m, $y, $s, $q, $l, $:, $/, $/ | _ ], ConnOpts ) ->
