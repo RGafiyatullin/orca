@@ -3,6 +3,7 @@
 -behaviour (gen_server).
 
 -export ([start_link/2]).
+-export ([shutdown/2]).
 -export ([execute/2, execute/3]).
 -export ([
 		init/1, enter_loop/1,
@@ -28,6 +29,9 @@
 -define(
 	worker_start(Idx),
 	{worker_start, Idx}).
+-define(
+	shutdown( Reason ),
+	{shutdown, Reason} ).
 
 start_link( Url, ConnOpts ) when is_binary( Url ) ->
 	start_link( binary_to_list( Url ), ConnOpts );
@@ -48,6 +52,9 @@ start_link( Url = [ $m, $y, $s, $q, $l, $:, $/, $/ | _ ], ConnOpts ) ->
 					ConnDbName, PoolSize, MinRestartInterval,
 					ConnOpts ),
 	proc_lib:start_link( ?MODULE, enter_loop, [InitArgs] ).
+
+shutdown( Srv, Reason ) ->
+	gen_server:call( Srv, ?shutdown( Reason ) ).
 
 execute( Srv, PacketBin ) ->
 	execute_result( gen_server:call( Srv, ?execute( PacketBin ) ) ).
@@ -119,6 +126,9 @@ enter_loop(?init_args( User, Password, Host, Port, Database, PoolSize, MinRestar
 
 handle_call( ?execute( PacketBin ), GenReplyTo, State ) when is_binary( PacketBin ) ->
 	handle_call_execute( PacketBin, GenReplyTo, State );
+
+handle_call( ?shutdown( Reason ), GenReplyTo, State ) ->
+	handle_call_shutdown( Reason, GenReplyTo, State );
 
 handle_call(Request, From, State = #s{}) ->
 	log_report( warning, [
@@ -197,6 +207,10 @@ init_start_all_workers( S0 = #s{ conn_pool = ConnPoolIn } ) ->
 		end,
 		ConnPoolIn, ConnPoolIn #conn_pool.workers ),
 	{ok, S0 #s{ conn_pool = ConnPoolOut }}.
+
+handle_call_shutdown( Reason, _GenReplyTo, State = #s{ conn_pool = #conn_pool{ sup = Sup } } ) ->
+	true = erlang:exit( Sup, {shutdown, Reason} ),
+	{stop, Reason, ok, State}.
 
 handle_info_packet_handshake(
 		WorkerPid, HandshakeReqBin,

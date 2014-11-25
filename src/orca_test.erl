@@ -3,7 +3,17 @@
 -compile (export_all).
 -include ("orca.hrl").
 
-db_url() -> <<"mysql://orca_test:orca_test_password@localhost/orca_test_db">>.
+all() ->
+	ok = lists:foreach(
+		fun( F ) -> ok = F() end,
+		[
+			fun test_01_conn/0,
+			fun test_02_conn/0,
+			fun test_01_mgr/0,
+			fun test_02_mgr/0
+		] ).
+
+db_url() -> <<"mysql://orca_test:orca_test_password@localhost/orca_test_db?pool_size=8&min_restart_interval=500">>.
 sql_table_create_test_1() ->
 	<<"CREATE TABLE test_1 ("
 		"  id BIGINT AUTO_INCREMENT NOT NULL"
@@ -23,22 +33,37 @@ sql_insert_into_test_1() ->
 sql_select_from_test_1() ->
 	<<"SELECT id, i, vc, c, vb, b, dt FROM test_1 ORDER BY i ASC">>.
 
-test_01() ->
+test_01_conn() ->
 	{ok, Conn} = orca_conn:start_link( db_url() ),
-	{ok, #orca_ok{}} = orca_conn:ping( Conn ),
-	ok = orca_conn:shutdown( Conn, normal ).
+	test_01_gen( orca_conn, Conn ).
 
-test_02() ->
+test_01_mgr() ->
+	{ok, Mgr} = orca:start_link( db_url() ),
+	ok = timer:sleep(10),
+	test_01_gen( orca, Mgr ).
+
+test_02_conn() ->
 	{ok, Conn} = orca_conn:start_link( db_url() ),
-	{ok, #orca_ok{}} = orca_conn:sql( Conn, <<"DROP TABLE IF EXISTS test_1">> ),
-	{ok, #orca_ok{}} = orca_conn:sql( Conn, sql_table_create_test_1() ),
-	{ok, #orca_ok{}} = orca_conn:sql( Conn, sql_insert_into_test_1() ),
+	test_02_gen( orca_conn, Conn ).
+
+test_02_mgr() ->
+	{ok, Mgr} = orca:start_link( db_url() ),
+	ok = timer:sleep(10),
+	test_02_gen( orca, Mgr ).
+
+test_01_gen( Mod, Orca ) ->
+	{ok, #orca_ok{}} = Mod:ping( Orca ),
+	ok = Mod:shutdown( Orca, normal ).
+
+test_02_gen( Mod, Orca ) ->
+	{ok, #orca_ok{}} = Mod:sql( Orca, <<"DROP TABLE IF EXISTS test_1">> ),
+	{ok, #orca_ok{}} = Mod:sql( Orca, sql_table_create_test_1() ),
+	{ok, #orca_ok{}} = Mod:sql( Orca, sql_insert_into_test_1() ),
 	{ok, #orca_rows{ rows = [
 			[_,1,<<"varchar1">>, <<"char1">>, <<"varbinary1">>, <<"binary1", 0:(5 * 8)/integer>>, {datetime, {_, _}}],
 			[_,2,<<"varchar2">>, <<"char2">>, <<"varbinary2">>, <<"binary2", 0:(5 * 8)/integer>>, {datetime, {_, _}}]
-		] }} = orca_conn:sql( Conn, sql_select_from_test_1() ),
-	{ok, #orca_ok{}} = orca_conn:sql( Conn, <<"DELETE FROM test_1">> ),
-	{ok, #orca_ok{}} = orca_conn:sql( Conn, <<"DROP TABLE test_1">> ),
-	ok = orca_conn:shutdown( Conn, normal ).
-
+		] }} = Mod:sql( Orca, sql_select_from_test_1() ),
+	{ok, #orca_ok{}} = Mod:sql( Orca, <<"DELETE FROM test_1">> ),
+	{ok, #orca_ok{}} = Mod:sql( Orca, <<"DROP TABLE test_1">> ),
+	ok = Mod:shutdown( Orca, normal ).
 
