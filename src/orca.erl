@@ -57,7 +57,7 @@ process_kill( ConnMgr, ThreadID ) ->
 	raw_packet( ConnMgr, ComKill ).
 
 raw_packet( ConnMgr, PacketBin ) ->
-	result( orca_conn_mgr:execute( ConnMgr, PacketBin ) ).
+	result( orca_conn_mgr:execute( ConnMgr, PacketBin, infinity ) ).
 
 result( Error = {error, _} ) -> Error;
 result( {ok, {ok_packet, Props}} ) ->

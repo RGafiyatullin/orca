@@ -22,7 +22,7 @@
 -define( set_active( Mode ), {set_active, Mode} ).
 -define( send_packet( SeqID, Packet ), {send_packet, SeqID, Packet} ).
 -define( recv_packet(), recv_packet ).
--define( recv_default_timeout, 5000 ).
+-define( recv_default_timeout, 5000000 ).
 -define( shutdown( Reason ), {shutdown, Reason} ).
 
 -define( hib_timeout, 5000 ).

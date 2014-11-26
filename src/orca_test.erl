@@ -18,6 +18,15 @@ db_url() -> <<"mysql://orca_test:orca_test_password@localhost/orca_test_db?pool_
 verbose_tcp() -> {callback_log_tcp, fun orca_default_callbacks:log_tcp_error_logger/3}.
 verbose_log() -> {callback_log, fun orca_default_callbacks:log_error_logger/2}.
 
+sql_table_create_bench_table() ->
+	<<"CREATE table bench_table ("
+      "  id integer AUTO_INCREMENT"
+      ", col_1  VARCHAR(255)"
+      ", col_2  INTEGER"
+      ", col_3  TINYINT"
+      ", PRIMARY KEY ( id )"
+      " )">>.
+
 
 sql_table_create_test_1() ->
 	<<"CREATE TABLE test_1 ("
@@ -93,3 +102,47 @@ test_03_conn() ->
 	ok = orca_conn:raw_packet( Conn, 4, <<>> ),
 	{ok, #orca_ok{ affected_rows = 3 }} = orca_conn:recv_response( Conn ),
 	ok = orca_conn:shutdown( Conn, normal ).
+
+test_04_gen( Mod, Orca, RowsToInsert ) when is_integer(RowsToInsert) andalso RowsToInsert > 0 ->
+	%% https://blog.process-one.net/optimizing-erlang-applications-emysql/
+	{ok, #orca_ok{}} = Mod:sql( Orca, <<"DROP TABLE IF EXISTS bench_table">> ),
+	{ok, #orca_ok{}} = Mod:sql( Orca, sql_table_create_bench_table() ),
+	InsertQuery = <<"INSERT INTO bench_table(col_1,col_2,col_3) values ('this is just some random data for testing', 21312, 1)">>,
+	T0 = now_us(),
+	ok = lists:foreach(
+		fun( _ ) ->
+			{ok, #orca_ok{}} = Mod:sql( Orca, InsertQuery )
+		end,
+		lists:seq( 1, RowsToInsert )),
+	T1 = now_us(),
+	ok = error_logger:info_report([
+			?MODULE, test_04_gen,
+			{mod, Mod},
+			{row_count, RowsToInsert},
+			{insert_time, T1 - T0},
+			{insert_rate, RowsToInsert / (T1 - T0) * 1000000}
+		]),
+	{ok, #orca_rows{}} = Mod:sql( Orca, <<"SELECT * FROM bench_table LIMIT ?">>, [ RowsToInsert ] ),
+	T2 = now_us(),
+	ok = error_logger:info_report([
+			?MODULE, test_04_gen,
+			{mod, Mod},
+			{row_count, RowsToInsert},
+			{select_time, T2 - T1},
+			{select_rate, RowsToInsert / (T2 - T1) * 1000000}
+		]),
+	ok = Mod:shutdown( Orca, normal ).
+
+test_04_conn( N ) ->
+	{ok, Conn} = orca_conn:start_link( db_url() ),
+	test_04_gen( orca_conn, Conn, N ).
+
+test_04_mgr( N ) ->
+	{ok, Mgr} = orca:start_link( db_url() ),
+	ok = timer:sleep(10),
+	test_04_gen( orca, Mgr, N ).
+
+now_us() ->
+	{ MegS, S, MuS } = os:timestamp(),
+	((MegS * 1000000 + S) * 1000000 + MuS).
+
