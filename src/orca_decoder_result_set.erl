@@ -114,7 +114,7 @@ maybe_parse_value( ?MYSQL_TYPE_TIME, Encoded ) -> b2time( Encoded );
 maybe_parse_value( ?MYSQL_TYPE_DATETIME, Encoded ) -> b2datetime( Encoded );
 maybe_parse_value( ?MYSQL_TYPE_YEAR, Encoded ) -> b2i( Encoded );
 maybe_parse_value( ?MYSQL_TYPE_NEWDATE, Encoded ) -> {not_ipmlemented, ?MYSQL_TYPE_NEWDATE, Encoded};
-maybe_parse_value( ?MYSQL_TYPE_VARCHAR, Encoded ) -> Encoded;
+maybe_parse_value( ?MYSQL_TYPE_VARCHAR, Encoded ) -> b( Encoded );
 maybe_parse_value( ?MYSQL_TYPE_BIT, Encoded ) -> b2bool( Encoded );
 maybe_parse_value( ?MYSQL_TYPE_TIMESTAMP2, Encoded ) -> {not_ipmlemented, ?MYSQL_TYPE_TIMESTAMP2, Encoded};
 maybe_parse_value( ?MYSQL_TYPE_DATETIME2, Encoded ) -> {not_ipmlemented, ?MYSQL_TYPE_DATETIME2, Encoded};
@@ -122,12 +122,12 @@ maybe_parse_value( ?MYSQL_TYPE_TIME2, Encoded ) -> {not_ipmlemented, ?MYSQL_TYPE
 maybe_parse_value( ?MYSQL_TYPE_NEWDECIMAL, Encoded ) -> b2f( Encoded );
 maybe_parse_value( ?MYSQL_TYPE_ENUM, Encoded ) -> b2_enum_stub( Encoded );
 maybe_parse_value( ?MYSQL_TYPE_SET, Encoded ) -> {not_ipmlemented, ?MYSQL_TYPE_SET, Encoded};
-maybe_parse_value( ?MYSQL_TYPE_TINY_BLOB, Encoded ) -> Encoded;
-maybe_parse_value( ?MYSQL_TYPE_MEDIUM_BLOB, Encoded ) -> Encoded;
-maybe_parse_value( ?MYSQL_TYPE_LONG_BLOB, Encoded ) -> Encoded;
-maybe_parse_value( ?MYSQL_TYPE_BLOB, Encoded ) -> Encoded;
-maybe_parse_value( ?MYSQL_TYPE_VAR_STRING, Encoded ) -> Encoded;
-maybe_parse_value( ?MYSQL_TYPE_STRING, Encoded ) -> Encoded;
+maybe_parse_value( ?MYSQL_TYPE_TINY_BLOB, Encoded ) -> b( Encoded );
+maybe_parse_value( ?MYSQL_TYPE_MEDIUM_BLOB, Encoded ) -> b( Encoded );
+maybe_parse_value( ?MYSQL_TYPE_LONG_BLOB, Encoded ) -> b( Encoded );
+maybe_parse_value( ?MYSQL_TYPE_BLOB, Encoded ) -> b( Encoded );
+maybe_parse_value( ?MYSQL_TYPE_VAR_STRING, Encoded ) -> b( Encoded );
+maybe_parse_value( ?MYSQL_TYPE_STRING, Encoded ) -> b( Encoded );
 maybe_parse_value( ?MYSQL_TYPE_GEOMETRY, Encoded ) -> {not_ipmlemented, ?MYSQL_TYPE_GEOMETRY, Encoded};
 maybe_parse_value( ColType, Encoded ) -> {not_implemented, ColType, Encoded}.
 
@@ -143,6 +143,10 @@ b2_enum_stub( B ) -> B.
 %% * b2date/1
 %% * b2time/1
 %% * b2datetime/1
+
+b( B ) ->
+	% B.
+	binary:copy( B ).
 
 b2f( B ) ->
 	{ok, [Num], _Leftovers} =
