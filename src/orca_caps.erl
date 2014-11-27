@@ -26,6 +26,9 @@ default_client_caps() -> [
 		?CAP_CLIENT_SECURE_CONNECTION,
 		?CAP_CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA,
 		?CAP_CLIENT_CONNECT_ATTRS
+
+		% , ?CAP_CLIENT_CONNECT_WITH_DB
+		% , ?CAP_CLIENT_NO_SCHEMA
 	].
 
 cap_flags_from_opts( Opts ) ->

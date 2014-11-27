@@ -98,8 +98,8 @@ enter_loop( Opts ) ->
 				},
 			enter_loop_init_tcp_ready( S0 );
 		ErrorReply = {error, _} ->
-			ok = proc_lib:init_ack( ErrorReply ),
-			exit(shutdown)
+			ok = proc_lib:init_ack( ErrorReply )
+			% exit(shutdown)
 	end.
 
 init_tcp( Opts ) ->
@@ -107,7 +107,7 @@ init_tcp( Opts ) ->
 		proplists:get_value( host, Opts ),
 		proplists:get_value( port, Opts ),
 		proplists:get_value( socket, Opts ),
-		proplists:get_value( active, Opts )
+		proplists:get_value( active, Opts, false )
 	} of
 		{Host, Port, undefined, _} when Host /= undefined andalso Port /= undefined ->
 			orca_tcp:open( Host, Port );

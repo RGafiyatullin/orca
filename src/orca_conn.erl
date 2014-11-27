@@ -58,6 +58,7 @@ start_link( Url, Opts ) ->
 				ok_packet -> {ok, Conn};
 				err_packet -> {error, {init_db, PropsInitDb}}
 			end;
+			% {ok, Conn};
 		err_packet -> {error, {auth, PropsAuthResult}}
 	end.
 

@@ -1,6 +1,7 @@
 -ifndef(orca_include_proto_consts_hrl).
 -define(orca_include_proto_consts_hrl, true).
 
+%% Capabilities
 -define( CAP_CLIENT_LONG_PASSWORD,         16#00000001 ).
 -define( CAP_CLIENT_FOUND_ROWS,            16#00000002 ).
 -define( CAP_CLIENT_LONG_FLAG,             16#00000004 ).
@@ -36,7 +37,6 @@
 -define( PACKET_TYPE_REQUEST_LOCAL_FILE_CONTENT, 16#FB ).
 
 %% Commands
-
 -define( COM_SLEEP,            16#00 ).
 -define( COM_QUIT,             16#01 ).
 -define( COM_INIT_DB,          16#02 ).
@@ -94,4 +94,21 @@
 -define( MYSQL_TYPE_VAR_STRING,  16#FD ).
 -define( MYSQL_TYPE_STRING,      16#FE ).
 -define( MYSQL_TYPE_GEOMETRY,    16#FF ).
+
+%% Status flags
+-define( SERVER_STATUS_IN_TRANS,             16#0001 ).
+-define( SERVER_STATUS_AUTOCOMMIT,           16#0002 ).
+-define( SERVER_MORE_RESULTS_EXISTS,         16#0008 ).
+-define( SERVER_STATUS_NO_GOOD_INDEX_USED,   16#0010 ).
+-define( SERVER_STATUS_NO_INDEX_USED,        16#0020 ).
+-define( SERVER_STATUS_CURSOR_EXISTS,        16#0040 ).
+-define( SERVER_STATUS_LAST_ROW_SENT,        16#0080 ).
+-define( SERVER_STATUS_DB_DROPPED,           16#0100 ).
+-define( SERVER_STATUS_NO_BACKSLASH_ESCAPES, 16#0200 ).
+-define( SERVER_STATUS_METADATA_CHANGED,     16#0400 ).
+-define( SERVER_QUERY_WAS_SLOW,              16#0800 ).
+-define( SERVER_PS_OUT_PARAMS,               16#1000 ).
+-define( SERVER_STATUS_IN_TRANS_READONLY,    16#2000 ).
+-define( SERVER_SESSION_STATE_CHANGED,       16#4000 ).
+
 -endif. % orca_include_proto_consts_hrl
