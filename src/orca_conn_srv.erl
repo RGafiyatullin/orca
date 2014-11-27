@@ -2,12 +2,12 @@
 -compile ({parse_transform, gin}).
 -behaviour (gen_server).
 
--export ([ start_link/2, start_link/3 ]).
+-export ([ start_link/1 ]).
 -export ([ set_active/2 ]).
 -export ([ send_packet/3, recv_packet/1 ]).
 -export ([ shutdown/2 ]).
 -export ([
-		init/1, enter_loop/3,
+		init/1, enter_loop/1,
 		handle_call/3,
 		handle_cast/2,
 		handle_info/2,
@@ -27,17 +27,15 @@
 
 -define( hib_timeout, 5000 ).
 
--spec start_link( inet_host(), inet_port() ) -> {ok, pid()}.
--spec start_link( inet_host(), inet_port(), [ conn_opt() ] ) -> {ok, pid()}.
+-spec start_link( [ conn_opt() ] ) -> {ok, pid()}.
 -spec set_active( pid(), once | true | false ) -> ok.
 -spec send_packet( pid(), non_neg_integer(), binary() ) -> ok.
 -spec recv_packet( pid() ) -> {ok, binary()} | {error, term()}.
 -spec shutdown( pid(), term() ) -> ok.
 
-start_link( Host, Port ) -> start_link( Host, Port, [] ).
-start_link( Host, Port, Opts0 ) when ?is_inet_port( Port ) ->
+start_link( Opts0 ) when is_list( Opts0 ) ->
 	Opts1 = opts_ensure_controlling_process( Opts0 ),
-	proc_lib:start_link( ?MODULE, enter_loop, [ Host, Port, Opts1 ] ).
+	proc_lib:start_link( ?MODULE, enter_loop, [ Opts1 ] ).
 
 set_active( Srv, Mode )
 	when (is_pid( Srv ) orelse is_atom( Srv ))
@@ -60,8 +58,6 @@ shutdown( Srv, Reason ) when is_pid( Srv ) ->
 
 
 -record(s, {
-		host :: inet_host(),
-		port :: inet_port(),
 		opts :: [ conn_opt() ],
 
 		tcp :: orca_tcp:conn(),
@@ -79,45 +75,76 @@ shutdown( Srv, Reason ) when is_pid( Srv ) ->
 		sync_recv_reply_q = queue:new() :: queue:queue( {pid(), reference()} )
 	}).
 
-enter_loop( Host, Port, Opts ) ->
+enter_loop( Opts ) ->
 	{controlling_process, ControllingProcess} = lists:keyfind( controlling_process, 1, Opts ),
-	InitialActiveMode = proplists:get_value( active, Opts, false ),
 
-	LogF = proplists:get_value( callback_log, Opts, fun orca_default_callbacks:log_error_logger/2 ),
-	undefined = erlang:put( ?callback_log, LogF ),
-	TcpLogF = proplists:get_value( callback_log_tcp, Opts, fun orca_default_callbacks:log_tcp_null/3 ),
-	undefined = erlang:put( ?callback_log_tcp, TcpLogF ),
+	ok = init_logging( Opts ),
 
-	case orca_tcp:open( Host, Port ) of
+	case init_tcp( Opts ) of
 		{ok, Tcp} ->
 			ok = proc_lib:init_ack( {ok, self()} ),
-			{MsgData, MsgClosed, MsgError, MsgPort} = orca_tcp:messages( Tcp ),
-			ResponseCtx = orca_response:new(),
+
 			ControllingProcessMonRef = erlang:monitor( process, ControllingProcess ),
-			ok = orca_tcp:activate( Tcp ),
+			InitialActiveMode = proplists:get_value( active, Opts, false ),
 			S0 = #s{
-					host = Host,
-					port = Port,
 					opts = Opts,
 
 					tcp = Tcp,
 
-					msg_data = MsgData,
-					msg_closed = MsgClosed,
-					msg_error = MsgError,
-					msg_port = MsgPort,
-
-					response_ctx = ResponseCtx,
-
 					controlling_process = ControllingProcess,
 					controlling_process_mon_ref = ControllingProcessMonRef,
+
 					active = InitialActiveMode
 				},
-			gen_server:enter_loop( ?MODULE, [], S0, ?hib_timeout );
+			enter_loop_init_tcp_ready( S0 );
 		ErrorReply = {error, _} ->
 			ok = proc_lib:init_ack( ErrorReply ),
 			exit(shutdown)
 	end.
+
+init_tcp( Opts ) ->
+	case {
+		proplists:get_value( host, Opts ),
+		proplists:get_value( port, Opts ),
+		proplists:get_value( socket, Opts ),
+		proplists:get_value( active, Opts )
+	} of
+		{Host, Port, undefined, _} when Host /= undefined andalso Port /= undefined ->
+			orca_tcp:open( Host, Port );
+		{undefined, undefined, Socket, false} when is_port( Socket ) ->
+			orca_tcp:from_socket( Socket );
+		{undefined, undefined, Socket, _} when is_port( Socket ) ->
+			{error, pre_openned_socket_must_not_be_active};
+		{_, _, _, _} ->
+			{error, {either_optset_should_be_provided, {[host, port], [socket]} }}
+	end.
+
+init_logging( Opts ) ->
+	LogF = proplists:get_value( callback_log, Opts, fun orca_default_callbacks:log_error_logger/2 ),
+	undefined = erlang:put( ?callback_log, LogF ),
+	TcpLogF = proplists:get_value( callback_log_tcp, Opts, fun orca_default_callbacks:log_tcp_null/3 ),
+	undefined = erlang:put( ?callback_log_tcp, TcpLogF ),
+	ok.
+
+-spec enter_loop_init_tcp_ready( S0 :: #s{} ) -> no_return().
+enter_loop_init_tcp_ready( S0 = #s{ tcp = Tcp, active = InitialActiveMode } ) ->
+	{MsgData, MsgClosed, MsgError, MsgPort} = orca_tcp:messages( Tcp ),
+	ok =
+		case InitialActiveMode of
+			false -> ok;
+			_ -> orca_tcp:activate( Tcp )
+		end,
+	S1 = S0 #s{
+			msg_data = MsgData,
+			msg_closed = MsgClosed,
+			msg_error = MsgError,
+			msg_port = MsgPort,
+
+			response_ctx = orca_response:new()
+		},
+	gen_server:enter_loop( ?MODULE, [], S1, ?hib_timeout ).
+
+
 
 init( _ ) -> {stop, {error, enter_loop_used}}.
 

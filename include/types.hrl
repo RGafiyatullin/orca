@@ -12,10 +12,13 @@
 -type log_level() :: info | warning | error.
 -type log_report() :: [ term() ].
 -type conn_opt() ::
-	  {cap_add, pos_integer()} | {cap_rm, pos_integer()}
+	  {host, inet_host()}
+	| {port, inet_port()}
+	| {cap_add, pos_integer()} | {cap_rm, pos_integer()}
 	| {callback_log, fun( ( log_level(), log_report() ) -> ok )}
 	| {callback_log_tcp, fun( ( pid(), in | out, binary() ) -> ok )}
 	| {controlling_process, pid()}
+	| {socket, port()}
 	| {active, once | true | false}.
 
 -endif. % orca_include_types_hrl

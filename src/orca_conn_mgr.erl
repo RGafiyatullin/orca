@@ -98,8 +98,7 @@ execute_result( {ok, {result_set_raw, RawProps}} ) ->
 -record(conn_pool, {
 		sup :: pid(),
 		workers = [] :: [ #pool_worker{} ],
-		min_restart_interval :: non_neg_integer(),
-		conn_opts :: [ term() ]
+		min_restart_interval :: non_neg_integer()
 	}).
 -record(s, {
 		client_cap_flags :: non_neg_integer(),
@@ -197,16 +196,21 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal %%%
 %%% %%%%%%%% %%%
 
-init_conn_pool( PoolSize, MinRestartInterval, Host, Port, ConnOpts ) ->
-	{ok, Sup} = simplest_one_for_one:start_link( {orca_conn_srv, start_link, [ Host, Port ]} ),
+init_conn_pool( PoolSize, MinRestartInterval, Host, Port, ConnOpts0 ) ->
+	MgrPid = self(),
+	ConnOpts1 = [
+			{host, Host}, {port, Port},
+			{active, once}, {controlling_process, MgrPid}
+		| ConnOpts0 ],
+
+	{ok, Sup} = simplest_one_for_one:start_link( {orca_conn_srv, start_link, [ ConnOpts1 ]} ),
 	Pool = #conn_pool{
 			sup = Sup,
 			workers = [
 					#pool_worker{ idx = Idx }
 					|| Idx <- lists:seq(0, PoolSize - 1)
 				],
-			min_restart_interval = MinRestartInterval,
-			conn_opts = ConnOpts
+			min_restart_interval = MinRestartInterval
 		},
 	{ok, Pool}.
 
@@ -369,12 +373,10 @@ now_ms() ->
 	{MegS, S, MuS} = erlang:now(),
 	(((MegS * 1000000) + S) * 1000) + (MuS div 1000).
 
-conn_pool_worker_start( Idx, ConnPool0 = #conn_pool{ conn_opts = ConnOpts, workers = Workers0, sup = Sup } ) ->
-	MgrPid = self(),
-	ConnInitialOpts = [ {active, once}, {controlling_process, MgrPid} | ConnOpts ],
+conn_pool_worker_start( Idx, ConnPool0 = #conn_pool{ workers = Workers0, sup = Sup } ) ->
 	case lists:keytake( Idx, #pool_worker.idx, Workers0 ) of
 		{value, W0 = #pool_worker{ pid = undefined, mon = undefined }, Workers1} ->
-			case supervisor:start_child( Sup, [ ConnInitialOpts ] ) of
+			case supervisor:start_child( Sup, [] ) of
 				{ok, WorkerPid} ->
 					WorkerMon = erlang:monitor( process, WorkerPid ),
 					W1 = W0 #pool_worker{ idx = Idx, pid = WorkerPid, mon = WorkerMon, last_start = now_ms() },

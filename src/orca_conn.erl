@@ -40,7 +40,7 @@ start_link( Url, Opts ) ->
 
 	ClientCapFlags = orca_caps:cap_flags_from_opts( Opts ),
 
-	{ok, Conn} = orca_conn_srv:start_link(ConnHost, ConnPort, [{active, false} | Opts]),
+	{ok, Conn} = orca_conn_srv:start_link([{active, false}, {host, ConnHost}, {port, ConnPort} | Opts]),
 	{ok, PacketHandshakeReq} = orca_conn_srv:recv_packet( Conn ),
 	{ok, {handshake_request, PropsHandshakeReq}} = orca_decoder_handshake:decode( PacketHandshakeReq ),
 	{ok, PacketHandshakeResp} = orca_encoder_handshake_response:auth(

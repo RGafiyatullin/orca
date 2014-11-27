@@ -1,7 +1,7 @@
 -module (orca_tcp).
 -compile ({parse_transform, gin}).
 -export ([
-		open/2,
+		open/2, from_socket/1,
 		activate/1,
 		send/2,
 		messages/1
@@ -17,6 +17,8 @@
 -spec activate( conn() ) -> ok | {error, posix_error()}.
 -spec send( conn(), binary() | iolist() ) -> ok | {error, posix_error()}.
 -spec messages( conn() ) -> {atom(), atom(), atom(), term()}.
+
+from_socket( Sock ) when is_port( Sock ) -> {ok, #orca_tcp{ sock = Sock }}.
 
 open( Host, Port ) when ?is_inet_port( Port ) ->
 	case gen_tcp:connect( Host, Port, [ binary, {packet, raw}, {active, false} ] ) of
