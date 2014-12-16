@@ -4,7 +4,7 @@
 ###Currently supported:
 
 * ####Text protocol
-> This is about SELECT, INSERT, DELETE, UPDATE and event LOAD DATA INFILE|OUTFILE statements.
+> This is about SELECT, INSERT, DELETE, UPDATE and even LOAD DATA INFILE|OUTFILE statements.
 >
 > These are supported: the commands are encoded and passed to the database server the responses are decoded and provided as neat erlang terms correctly.
 
