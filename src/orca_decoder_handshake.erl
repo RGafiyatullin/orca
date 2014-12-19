@@ -16,7 +16,11 @@ decode( Bin ) -> decode_handshake_request( Bin ).
 decode_handshake_request( Bin0 ) when is_binary( Bin0 ) ->
 	{ok, ProtoVer, Bin1} = orca_type_decoder:take( {int, 1}, Bin0 ),
 	case ProtoVer of
-		16#FF -> {ok, handshake_error};
+		16#FF ->
+			{ok, ErrCode, Bin2} = orca_type_decoder:take( {int, 2}, Bin1 ),
+			{ok, ErrMsg, <<>>} = orca_type_decoder:take( {string, eof}, Bin2 ),
+			{error, {handshake_error, [ {err_code, ErrCode}, {err_msg, ErrMsg} ]}};
+
 		16#0A -> % Protocol::HandshakeV10
 			{ok, ServerVersion, Bin2} = orca_type_decoder:take( {string, null}, Bin1 ),
 			{ok, ConnectionID, Bin3} = orca_type_decoder:take( {int, 4}, Bin2 ),
