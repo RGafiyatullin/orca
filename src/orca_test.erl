@@ -45,7 +45,7 @@ test_01_conn() ->
 
 test_01_mgr() ->
 	{ok, Mgr} = orca:start_link( db_url() ),
-	ok = timer:sleep(10),
+	ok = orca:await_ready( Mgr ),
 	test_01_gen( orca, Mgr ).
 
 test_02_conn() ->
@@ -54,7 +54,7 @@ test_02_conn() ->
 
 test_02_mgr() ->
 	{ok, Mgr} = orca:start_link( db_url() ),
-	ok = timer:sleep(10),
+	ok = orca:await_ready( Mgr ),
 	test_02_gen( orca, Mgr ).
 
 test_01_gen( Mod, Orca ) ->

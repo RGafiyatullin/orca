@@ -1,6 +1,7 @@
 -module (orca).
 -export ([
 		start_link/1, start_link/2,
+		await_ready/3, await_ready/2, await_ready/1,
 		shutdown/2
 	]).
 -export ([
@@ -29,6 +30,16 @@
 
 start_link( Url ) -> start_link( Url, [] ).
 start_link( Url, Opts ) -> orca_conn_mgr:start_link( Url, Opts ).
+
+await_ready( ConnMgr ) -> await_ready( ConnMgr, 5000, 100 ).
+await_ready( ConnMgr, Timeout ) -> await_ready( ConnMgr, Timeout, 100 ).
+await_ready( ConnMgr, Timeout, PingInterval )
+	when is_integer(Timeout) andalso Timeout > 0
+	andalso is_integer(PingInterval) andalso PingInterval > 0
+->
+	Now = now_ms(),
+	Deadline = Now + Timeout,
+	await_ready_impl( ConnMgr, PingInterval, Deadline ).
 
 shutdown( ConnMgr, Reason ) -> orca_conn_mgr:shutdown( ConnMgr, Reason ).
 
@@ -94,3 +105,20 @@ result( {ok, {err_packet, Props}} ) ->
 		end,
 		#orca_error{}, Props),
 	{ok, OrcaError}.
+
+now_ms() ->
+	{MegS, S, MuS} = erlang:now(),
+	(((MegS * 1000000) + S) * 1000) + (MuS div 1000).
+
+await_ready_impl( ConnMgr, PingInterval, Deadline ) ->
+	case orca:ping( ConnMgr ) of
+		{ok, #orca_ok{}} -> ok;
+		{error, {lb, no_workers}} ->
+			case now_ms() < Deadline of
+				true ->
+					ok = timer:sleep( PingInterval ),
+					await_ready_impl( ConnMgr, PingInterval, Deadline );
+				false ->
+					{error, timeout}
+			end
+	end.
