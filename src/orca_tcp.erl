@@ -21,7 +21,7 @@
 from_socket( Sock ) when is_port( Sock ) -> {ok, #orca_tcp{ sock = Sock }}.
 
 open( Host, Port ) when ?is_inet_port( Port ) ->
-	case gen_tcp:connect( Host, Port, [ binary, {packet, raw}, {active, false} ] ) of
+	case gen_tcp:connect( Host, Port, [ binary, {packet, raw}, {active, false}, {send_timeout, infinity} ] ) of
 		{ok, Sock} ->
 			{ok, #orca_tcp{
 					sock = Sock

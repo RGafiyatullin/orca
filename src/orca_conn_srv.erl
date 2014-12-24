@@ -14,6 +14,9 @@
 		terminate/2,
 		code_change/3
 	]).
+-export ([
+		tx_enter_loop/1
+	]).
 -include ("types.hrl").
 
 -define( callback_log, {?MODULE, callback_log} ).
@@ -36,6 +39,20 @@
 start_link( Opts0 ) when is_list( Opts0 ) ->
 	Opts1 = opts_ensure_controlling_process( Opts0 ),
 	proc_lib:start_link( ?MODULE, enter_loop, [ Opts1 ] ).
+
+
+tx_enter_loop( Tcp ) ->
+	ok = proc_lib:init_ack( {ok, self()} ),
+	tx_loop( Tcp ).
+
+tx_loop( Tcp ) ->
+	receive
+		{send, DataToSend} ->
+			ok = orca_tcp:send( Tcp, DataToSend ),
+			tx_loop( Tcp );
+		_Rubbish ->
+			tx_loop( Tcp )
+	end.
 
 set_active( Srv, Mode )
 	when (is_pid( Srv ) orelse is_atom( Srv ))
@@ -72,6 +89,8 @@ shutdown( Srv, Reason ) when is_pid( Srv ) ->
 
 		active = false :: false | true | once,
 
+		tx_pid :: pid(),
+
 		sync_recv_reply_q = queue:new() :: queue:queue( {pid(), reference()} )
 	}).
 
@@ -86,10 +105,12 @@ enter_loop( Opts ) ->
 
 			ControllingProcessMonRef = erlang:monitor( process, ControllingProcess ),
 			InitialActiveMode = proplists:get_value( active, Opts, false ),
+			{ok, TxPid} = proc_lib:start_link( ?MODULE, tx_enter_loop, [ Tcp ] ),
 			S0 = #s{
 					opts = Opts,
 
 					tcp = Tcp,
+					tx_pid = TxPid,
 
 					controlling_process = ControllingProcess,
 					controlling_process_mon_ref = ControllingProcessMonRef,
@@ -239,12 +260,13 @@ handle_info_closed( State0 ) ->
 	{stop, {shutdown, tcp_closed}, State0}.
 	% {noreply, State0}.
 
-handle_cast_send_packet( SeqID, Packet, State = #s{ tcp = Tcp } ) ->
+handle_cast_send_packet( SeqID, Packet, State = #s{ tx_pid = TxPid } ) ->
 	PacketLen = size(Packet),
 	PacketHeader = << PacketLen:24/little, SeqID:8/integer >>,
 	DataToSend = iolist_to_binary([PacketHeader, Packet]),
 	ok = log_tcp( self(), out, DataToSend ),
-	ok = orca_tcp:send( Tcp, DataToSend ),
+	% ok = orca_tcp:send( Tcp, DataToSend ),
+	_ = erlang:send( TxPid, {send, DataToSend} ),
 	{noreply, State, ?hib_timeout}.
 
 handle_info_timeout( State ) ->
