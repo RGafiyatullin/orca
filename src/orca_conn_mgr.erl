@@ -334,7 +334,7 @@ handle_call_execute( PacketBin, GenReplyTo, State = #s{ lb = LB0 } ) ->
 			log_report( info, [ ?MODULE, handle_call_execute, {worker, Worker} ] ),
 			ok = orca_conn_srv:send_packet( Worker, 0, PacketBin ),
 			ok = orca_conn_srv:set_active( Worker, once ),
-			ok = worker_state( Worker, {ready, undefined} ),
+			% ok = worker_state( Worker, {ready, undefined} ),
 			{noreply, State #s{ lb = LB1 }}
 	end.
 

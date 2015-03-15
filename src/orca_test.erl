@@ -15,6 +15,10 @@ all() ->
 		] ).
 
 db_url() -> <<"mysql://orca_test:orca_test_password@localhost/orca_test_db?pool_size=8&min_restart_interval=500">>.
+db_opts() -> [
+			{callback_log, fun orca_default_callbacks:log_null/2},
+			{callback_log_tcp, fun orca_default_callbacks:log_tcp_null/3}
+		].
 verbose_tcp() -> {callback_log_tcp, fun orca_default_callbacks:log_tcp_error_logger/3}.
 verbose_log() -> {callback_log, fun orca_default_callbacks:log_error_logger/2}.
 
@@ -40,20 +44,20 @@ sql_select_from_test_1() ->
 	<<"SELECT id, i, vc, c, vb, b, dt FROM test_1 ORDER BY i ASC">>.
 
 test_01_conn() ->
-	{ok, Conn} = orca_conn:start_link( db_url() ),
+	{ok, Conn} = orca_conn:start_link( db_url(), db_opts() ),
 	test_01_gen( orca_conn, Conn ).
 
 test_01_mgr() ->
-	{ok, Mgr} = orca:start_link( db_url() ),
+	{ok, Mgr} = orca:start_link( db_url(), db_opts() ),
 	ok = orca:await_ready( Mgr ),
 	test_01_gen( orca, Mgr ).
 
 test_02_conn() ->
-	{ok, Conn} = orca_conn:start_link( db_url() ),
+	{ok, Conn} = orca_conn:start_link( db_url(), db_opts() ),
 	test_02_gen( orca_conn, Conn ).
 
 test_02_mgr() ->
-	{ok, Mgr} = orca:start_link( db_url() ),
+	{ok, Mgr} = orca:start_link( db_url(), db_opts() ),
 	ok = orca:await_ready( Mgr ),
 	test_02_gen( orca, Mgr ).
 
@@ -75,7 +79,7 @@ test_02_gen( Mod, Orca ) ->
 
 
 test_03_conn() ->
-	{ok, Conn} = orca_conn:start_link( db_url(), [ {cap_add, ?CAP_CLIENT_LOCAL_FILES} ] ),
+	{ok, Conn} = orca_conn:start_link( db_url(), [ {cap_add, ?CAP_CLIENT_LOCAL_FILES} | db_opts() ] ),
 	{ok, #orca_ok{}} = orca_conn:sql( Conn, <<"DROP TABLE IF EXISTS test_1">> ),
 	{ok, #orca_ok{}} = orca_conn:sql( Conn, sql_table_create_test_1() ),
 	{ok, #orca_request_local_file_content{ filename = <<"test-file.tsv">> }} =
