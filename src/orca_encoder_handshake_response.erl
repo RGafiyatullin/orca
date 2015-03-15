@@ -48,12 +48,12 @@ auth_response( Password, HandshakeProps ) ->
 	{auth_plugin_data_part_1, Challenge_P1} = lists:keyfind( auth_plugin_data_part_1, 1, HandshakeProps ),
 	{auth_plugin_data_part_2, Challenge_P2} = lists:keyfind( auth_plugin_data_part_2, 1, HandshakeProps ),
 	<< Salt:20/binary, _/binary >> = <<Challenge_P1/binary, Challenge_P2/binary>>,
-	Stage1 = crypto:sha( Password ),
-	Stage2 = crypto:sha( Stage1 ),
-	Res = crypto:sha_final(
-			crypto:sha_update(
-				crypto:sha_update(
-					crypto:sha_init(),
+	Stage1 = crypto:hash( sha, Password ),
+	Stage2 = crypto:hash( sha, Stage1 ),
+	Res = crypto:hash_final(
+			crypto:hash_update(
+				crypto:hash_update(
+					crypto:hash_init( sha ),
 					Salt
 				), Stage2 ) ),
 	bxor_binary( Res, Stage1 ).
