@@ -331,7 +331,7 @@ handle_call_execute( PacketBin, GenReplyTo, State = #s{ lb = LB0 } ) ->
 			log_report( warning, [ ?MODULE, handle_call_execute, {lb_error, Reason} ] ),
 			{reply, {error, {lb, Reason}}, State};
 		{ok, Worker, LB1} ->
-			log_report( info, [ ?MODULE, handle_call_execute, {worker, Worker} ] ),
+			% log_report( info, [ ?MODULE, handle_call_execute, {worker, Worker} ] ),
 			ok = orca_conn_srv:send_packet( Worker, 0, PacketBin ),
 			ok = orca_conn_srv:set_active( Worker, once ),
 			% ok = worker_state( Worker, {ready, undefined} ),
@@ -343,8 +343,8 @@ handle_info_packet_generic( WorkerPid, PacketBin, DecodeCtx0, State = #s{ lb = L
 	%	{worker_pid, WorkerPid}, {packet_in, PacketBin} ] ),
 	DecodeResult =
 		orca_decoder_generic_response:decode_continue( PacketBin, DecodeCtx0 ),
-	log_report( info, [ ?MODULE, handle_info_packet_generic,
-		{worker_pid, WorkerPid}, {decode_result, DecodeResult} ] ),
+	% log_report( info, [ ?MODULE, handle_info_packet_generic,
+	% 	{worker_pid, WorkerPid}, {decode_result, DecodeResult} ] ),
 	case DecodeResult of
 		{incomplete, DecodeCtx1} ->
 			ok = worker_state( WorkerPid, {ready, DecodeCtx1} ),
