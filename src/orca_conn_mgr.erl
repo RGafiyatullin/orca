@@ -324,8 +324,8 @@ handle_info_down( Ref, Pid, Reason, State0 = #s{ conn_pool = ConnPool0, lb = LB0
 	end.
 
 handle_call_execute( PacketBin, GenReplyTo, State = #s{ lb = LB0 } ) ->
-	log_report( info, [ ?MODULE, handle_call_execute,
-		{packet_out, PacketBin}, {gen_reply_to, GenReplyTo} ] ),
+	% log_report( info, [ ?MODULE, handle_call_execute,
+	% 	{packet_out, PacketBin}, {gen_reply_to, GenReplyTo} ] ),
 	case orca_conn_mgr_lb:job_in( GenReplyTo, LB0 ) of
 		{error, Reason} ->
 			log_report( warning, [ ?MODULE, handle_call_execute, {lb_error, Reason} ] ),
@@ -339,8 +339,8 @@ handle_call_execute( PacketBin, GenReplyTo, State = #s{ lb = LB0 } ) ->
 	end.
 
 handle_info_packet_generic( WorkerPid, PacketBin, DecodeCtx0, State = #s{ lb = LB0 } ) ->
-	log_report( info, [ ?MODULE, handle_info_packet_generic,
-		{worker_pid, WorkerPid}, {packet_in, PacketBin} ] ),
+	% log_report( info, [ ?MODULE, handle_info_packet_generic,
+	%	{worker_pid, WorkerPid}, {packet_in, PacketBin} ] ),
 	DecodeResult =
 		orca_decoder_generic_response:decode_continue( PacketBin, DecodeCtx0 ),
 	log_report( info, [ ?MODULE, handle_info_packet_generic,
