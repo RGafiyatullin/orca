@@ -107,7 +107,7 @@ result( {ok, {err_packet, Props}} ) ->
 	{ok, OrcaError}.
 
 now_ms() ->
-	{MegS, S, MuS} = erlang:now(),
+	{MegS, S, MuS} = erlang:timestamp(),
 	(((MegS * 1000000) + S) * 1000) + (MuS div 1000).
 
 await_ready_impl( ConnMgr, PingInterval, Deadline ) ->

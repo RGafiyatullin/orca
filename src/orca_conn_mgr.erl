@@ -380,7 +380,7 @@ restart_frequency_exceeded( Idx, #conn_pool{ min_restart_interval = MinRestartIn
 
 
 now_ms() ->
-	{MegS, S, MuS} = erlang:now(),
+	{MegS, S, MuS} = erlang:timestamp(),
 	(((MegS * 1000000) + S) * 1000) + (MuS div 1000).
 
 conn_pool_worker_start( Idx, ConnPool0 = #conn_pool{ workers = Workers0, sup = Sup } ) ->
