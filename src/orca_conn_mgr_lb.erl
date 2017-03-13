@@ -32,10 +32,14 @@ add( Pid, Ctx = #ctx{ workers = Ws0 } ) when is_pid( Pid ) ->
 	Ws1 = [ #worker{ pid = Pid } | Ws0 ],
 	{ok, Ctx #ctx{ workers = Ws1 }}.
 
-rm( Pid, Ctx = #ctx{ workers = Ws0 } ) when is_pid( Pid ) ->
-	{value, #worker{ reply_to_queue = ReplyToQueue }, Ws1} =
-		lists:keytake( Pid, #worker.pid, Ws0 ),
-	{ok, ReplyToQueue, Ctx #ctx{ workers = Ws1 }}.
+rm(Pid, Ctx = #ctx{workers = Ws0}) when is_pid(Pid) ->
+	case lists:keytake(Pid, #worker.pid, Ws0) of
+		{value, #worker{ reply_to_queue = ReplyToQueue }, Ws1} ->
+			{ok, ReplyToQueue, Ctx #ctx{ workers = Ws1 }};
+		false ->
+			{ok, queue:new(), Ctx}
+	end.
+
 
 job_in( _, #ctx{ workers = [] } ) -> {error, no_workers};
 job_in( GenReplyTo = {_, _}, Ctx = #ctx{ workers = [ W0 | Ws0 ] } ) ->

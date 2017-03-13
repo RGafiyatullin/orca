@@ -173,8 +173,8 @@ handle_info( ?orca_packet( WorkerPid, PacketBin ), State ) ->
 			{noreply, State, ?hib_timeout}
 	end;
 
-handle_info( ?worker_start(Idx), State ) ->
-	handle_info_worker_start( Idx, State );
+handle_info(?worker_start(Idx), State) ->
+	handle_info_worker_start(Idx, State);
 
 handle_info( {'DOWN', Ref, process, Pid, Reason}, State = #s{} ) ->
 	handle_info_down( Ref, Pid, Reason, State );
@@ -314,12 +314,12 @@ handle_info_down( Ref, Pid, Reason, State0 = #s{ conn_pool = ConnPool0, lb = LB0
 			W1 = W0 #pool_worker{ pid = undefined, mon = undefined },
 			ConnPool1 = ConnPool0 #conn_pool{ workers = [ W1 | Workers1 ] },
 			{ok, ConnPool2} = maybe_restart_worker( Idx, ConnPool1 ),
-			{ok, ReplyToQueue, LB1} = orca_conn_mgr_lb:rm( Pid, LB0 ),
+			{ok, ReplyToQueue, LB1} = orca_conn_mgr_lb:rm(Pid, LB0),
 			ok = lists:foreach(
 				fun (GenReplyTo) ->
-					_ = gen_server:reply( GenReplyTo, {error, {conn_down, Reason}} )
-				end,
-				queue:to_list( ReplyToQueue ) ),
+					_ = gen_server:reply(GenReplyTo, {error, {conn_down, Reason}})
+				end, queue:to_list(ReplyToQueue)
+			),
 			{noreply, State0 #s{ conn_pool = ConnPool2, lb = LB1 }, ?hib_timeout}
 	end.
 
@@ -366,8 +366,11 @@ maybe_restart_worker( Idx, ConnPool0 ) ->
 		false ->
 			{ok, _ConnPool1} = conn_pool_worker_start( Idx, ConnPool0 );
 		{true, AllowedToStartInMs} ->
-			_ = erlang:send_after( AllowedToStartInMs, self(), ?worker_start(Idx) ),
-			{ok, ConnPool0}
+			log_report(warning, [?MODULE, maybe_restart_worker, freq_exceeded, {worker_idx, Idx}]),
+			_ = erlang:send_after(AllowedToStartInMs, self(), ?worker_start(Idx)),
+			#conn_pool{workers = Ws0} = ConnPool0,
+			{value, Worker, Ws1} = lists:keytake( Idx, #pool_worker.idx, Ws0 ),
+			{ok, ConnPool0 #conn_pool{ workers = [ Worker #pool_worker{last_start = 0} | Ws1 ]}}
 	end.
 
 restart_frequency_exceeded( Idx, #conn_pool{ min_restart_interval = MinRestartInterval, workers = Ws0 } ) ->
