@@ -37,6 +37,7 @@ start_link( Url, Opts ) ->
 	ConnUser = proplists:get_value( user, ConnProps ),
 	ConnPassword = proplists:get_value( password, ConnProps ),
 	ConnDbName = proplists:get_value( db_name, ConnProps ),
+	InitialQueries = proplists:get_value(initial_queries, Opts, []),
 
 	ClientCapFlags = orca_caps:cap_flags_from_opts( Opts ),
 
@@ -55,7 +56,13 @@ start_link( Url, Opts ) ->
 			{ok, PacketInitDbResp} = orca_conn_srv:recv_packet( Conn ),
 			{ok, {TypeInitDb, PropsInitDb}} = orca_decoder_generic_response:decode( PacketInitDbResp ),
 			case TypeInitDb of
-				ok_packet -> {ok, Conn};
+				ok_packet ->
+					ok = lists:foreach(
+						fun(InitialQuery) ->
+							{ok, _} = sql(Conn, InitialQuery)
+						end,
+						InitialQueries),
+					{ok, Conn};
 				err_packet -> {error, {init_db, PropsInitDb}}
 			end;
 			% {ok, Conn};

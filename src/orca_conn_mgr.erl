@@ -32,6 +32,9 @@
 -define(
 	shutdown( Reason ),
 	{shutdown, Reason} ).
+-define(
+	initial_queries_run_complete(WorkerPid),
+	{initial_queries_run_complete, WorkerPid}).
 
 -spec start_link( db_url(), [ conn_opt() ] ) -> {ok, pid()}.
 -spec shutdown( pid(), term() ) -> ok.
@@ -105,7 +108,8 @@ execute_result( {ok, {result_set_raw, RawProps}} ) ->
 		lb :: orca_conn_mgr_lb:ctx(),
 		pool_size :: pos_integer(),
 		conn_props :: #conn_props{},
-		conn_pool :: #conn_pool{}
+		conn_pool :: #conn_pool{},
+		initial_queries :: [binary()]
 	}).
 
 init( _ ) -> {stop, {error, enter_loop_used}}.
@@ -123,12 +127,16 @@ enter_loop(?init_args( User, Password, Host, Port, Database, PoolSize, MinRestar
 		},
 	{ok, ConnPool} = init_conn_pool( PoolSize, MinRestartInterval, Host, Port, ConnOpts ),
 	{ok, LB} = orca_conn_mgr_lb:new(),
+
+	InitialQueries = proplists:get_value(initial_queries, ConnOpts, []),
+
 	S0 = #s{
 			client_cap_flags = ClientCapFlags,
 			lb = LB,
 			pool_size = PoolSize,
 			conn_props = ConnProps,
-			conn_pool = ConnPool
+			conn_pool = ConnPool,
+			initial_queries = InitialQueries
 		},
 	ok = proc_lib:init_ack({ok, self()}),
 	{ok, S1} = init_start_all_workers( S0 ),
@@ -148,6 +156,9 @@ handle_call(Request, From, State = #s{}) ->
 		]),
 	{reply, {badarg, Request}, State, ?hib_timeout}.
 
+handle_cast(?initial_queries_run_complete(WorkerPid), State) ->
+	handle_cast_initial_queries_run_complete(WorkerPid, State);
+
 handle_cast(Request, State = #s{}) ->
 	log_report( warning, [
 				?MODULE, handle_cast,
@@ -163,6 +174,7 @@ handle_info( ?orca_packet( WorkerPid, PacketBin ), State ) ->
 		expect_handshake -> handle_info_packet_handshake( WorkerPid, PacketBin, State );
 		expect_auth_result -> handle_info_packet_auth_result( WorkerPid, PacketBin, State );
 		expect_init_db_result -> handle_info_init_db_result( WorkerPid, PacketBin, State );
+
 		{ready, DecodeCtx} -> handle_info_packet_generic( WorkerPid, PacketBin, DecodeCtx, State );
 		WState ->
 			log_report( warning, [
@@ -268,13 +280,41 @@ handle_info_packet_auth_result(
 			{noreply, State, ?hib_timeout}
 	end.
 
-handle_info_init_db_result( WorkerPid, PacketBin, State = #s{ lb = LB0 } ) ->
+do_run_initial_queries(WorkerPid, InitialQueries) ->
+	ReportTo = self(),
+	ok = worker_state(WorkerPid, running_initial_queries),
+	spawn(fun() ->
+		true = erlang:link(WorkerPid),
+		ok = orca_conn_srv:set_active(WorkerPid, false),
+		ok = lists:foreach(
+			fun(Query) ->
+				{ok, ComQuery} = orca_encoder_com:com_query(Query, []),
+				ok = orca_conn_srv:send_packet(WorkerPid, 0, ComQuery),
+				{ok, RespPacket} = orca_conn_srv:recv_packet(WorkerPid),
+				{ok, _Result} = orca_decoder_generic_response:decode(RespPacket)
+			end,
+			InitialQueries),
+		ok = gen_server:cast(ReportTo, ?initial_queries_run_complete(WorkerPid))
+	end),
+	ok.
+
+
+handle_cast_initial_queries_run_complete(WorkerPid, State) ->
+	ok = worker_state(WorkerPid, {ready, undefined}),
+	ok = orca_conn_srv:set_active( WorkerPid, once ),
+	{noreply, State}.
+
+
+handle_info_init_db_result( WorkerPid, PacketBin, State = #s{ lb = LB0, initial_queries = InitialQueries } ) ->
 	{ok, {InitDbResultType, InitDbResultProps}} = orca_decoder_generic_response:decode( PacketBin ),
 	case InitDbResultType of
 		ok_packet ->
-			ok = orca_conn_srv:set_active( WorkerPid, once ),
 			{ok, LB1} = orca_conn_mgr_lb:add( WorkerPid, LB0 ),
-			ok = worker_state( WorkerPid, {ready, undefined} ),
+
+			% ok = orca_conn_srv:set_active( WorkerPid, once ),
+			% ok = worker_state( WorkerPid, {ready, undefined} ),
+
+			ok = do_run_initial_queries(WorkerPid, InitialQueries),
 
 			{noreply, State #s{ lb = LB1 }, ?hib_timeout};
 		err_packet ->
