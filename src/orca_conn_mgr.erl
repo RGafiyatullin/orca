@@ -14,6 +14,7 @@
 		code_change/3
 	]).
 -include("types.hrl").
+-include("orca_time.hrl").
 
 -define(callback_log, {?MODULE, callback_log}).
 -define(hib_timeout, 5000).
@@ -35,18 +36,6 @@
 -define(
 	initial_queries_run_complete(WorkerPid),
 	{initial_queries_run_complete, WorkerPid}).
-
-
--ifdef(otp_19).
--define(now_ms, os:system_time(millisecond)).
--else.
--define(now_ms,
-	case erlang:now() of
-		{MegS, S, MuS} ->
-			(((MegS * 1000000) + S) * 1000) + (MuS div 1000)
-	end
-).
--endif.
 
 
 -spec start_link( db_url(), [ conn_opt() ] ) -> {ok, pid()}.

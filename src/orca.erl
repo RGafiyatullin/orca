@@ -15,18 +15,7 @@
 
 -include ("orca.hrl").
 -include ("types.hrl").
-
-
--ifdef(otp_19).
--define(now_ms, os:system_time(millisecond)).
--else.
--define(now_ms,
-	case erlang:now() of
-		{MegS, S, MuS} ->
-			(((MegS * 1000000) + S) * 1000) + (MuS div 1000)
-	end
-).
--endif.
+-include ("orca_time.hrl").
 
 
 -type generic_response() :: #orca_ok{} | #orca_rows{} | #orca_error{}.
