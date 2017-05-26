@@ -1,4 +1,4 @@
--ifdef(otp_19).
+-ifdef(use_os_system_time).
 -define(now_ms, os:system_time(millisecond)).
 -else.
 -define(now_ms,
