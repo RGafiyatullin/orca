@@ -36,6 +36,19 @@
 	initial_queries_run_complete(WorkerPid),
 	{initial_queries_run_complete, WorkerPid}).
 
+
+-ifdef(otp_19).
+-define(now_ms, os:system_time(millisecond)).
+-else.
+-define(now_ms,
+	case erlang:now() of
+		{MegS, S, MuS} ->
+			(((MegS * 1000000) + S) * 1000) + (MuS div 1000)
+	end
+).
+-endif.
+
+
 -spec start_link( db_url(), [ conn_opt() ] ) -> {ok, pid()}.
 -spec shutdown( pid(), term() ) -> ok.
 -spec execute( pid(), binary() ) ->
@@ -415,16 +428,11 @@ maybe_restart_worker( Idx, ConnPool0 ) ->
 
 restart_frequency_exceeded( Idx, #conn_pool{ min_restart_interval = MinRestartInterval, workers = Ws0 } ) ->
 	#pool_worker{ last_start = LastStart } = lists:keyfind( Idx, #pool_worker.idx, Ws0 ),
-	NowMs = now_ms(),
+	NowMs = ?now_ms,
 	case LastStart + MinRestartInterval - NowMs of
 		NonPosValue when is_integer(NonPosValue) andalso NonPosValue =< 0 -> false;
 		PosValue when is_integer(PosValue) andalso PosValue > 0 -> {true, PosValue}
 	end.
-
-
-now_ms() ->
-	{MegS, S, MuS} = erlang:now(),
-	(((MegS * 1000000) + S) * 1000) + (MuS div 1000).
 
 conn_pool_worker_start( Idx, ConnPool0 = #conn_pool{ workers = Workers0, sup = Sup } ) ->
 	case lists:keytake( Idx, #pool_worker.idx, Workers0 ) of
@@ -432,14 +440,14 @@ conn_pool_worker_start( Idx, ConnPool0 = #conn_pool{ workers = Workers0, sup = S
 			case supervisor:start_child( Sup, [] ) of
 				{ok, WorkerPid} ->
 					WorkerMon = erlang:monitor( process, WorkerPid ),
-					W1 = W0 #pool_worker{ idx = Idx, pid = WorkerPid, mon = WorkerMon, last_start = now_ms() },
+					W1 = W0 #pool_worker{ idx = Idx, pid = WorkerPid, mon = WorkerMon, last_start = ?now_ms },
 					ok = worker_state( WorkerPid, expect_handshake ),
 
 					{ok, ConnPool0 #conn_pool{ workers = [ W1 | Workers1 ] }};
 				{error, StartChildError} ->
 					log_report( warning, [?MODULE, conn_pool_worker_start,
 						{idx, Idx}, {failed_to_start_worker, StartChildError} ]),
-					W1 = W0 #pool_worker{ last_start = now_ms() },
+					W1 = W0 #pool_worker{ last_start = ?now_ms },
 					ConnPool1 = ConnPool0 #conn_pool{ workers = [ W1 | Workers1 ] },
 					{ok, _ConnPool2} = maybe_restart_worker( Idx, ConnPool1 )
 			end;

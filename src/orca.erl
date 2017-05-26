@@ -16,6 +16,19 @@
 -include ("orca.hrl").
 -include ("types.hrl").
 
+
+-ifdef(otp_19).
+-define(now_ms, os:system_time(millisecond)).
+-else.
+-define(now_ms,
+	case erlang:now() of
+		{MegS, S, MuS} ->
+			(((MegS * 1000000) + S) * 1000) + (MuS div 1000)
+	end
+).
+-endif.
+
+
 -type generic_response() :: #orca_ok{} | #orca_rows{} | #orca_error{}.
 -type query_text() :: iolist() | binary().
 
@@ -37,7 +50,7 @@ await_ready( ConnMgr, Timeout, PingInterval )
 	when is_integer(Timeout) andalso Timeout > 0
 	andalso is_integer(PingInterval) andalso PingInterval > 0
 ->
-	Now = now_ms(),
+	Now = ?now_ms,
 	Deadline = Now + Timeout,
 	await_ready_impl( ConnMgr, PingInterval, Deadline ).
 
@@ -106,15 +119,12 @@ result( {ok, {err_packet, Props}} ) ->
 		#orca_error{}, Props),
 	{ok, OrcaError}.
 
-now_ms() ->
-	{MegS, S, MuS} = erlang:now(),
-	(((MegS * 1000000) + S) * 1000) + (MuS div 1000).
 
 await_ready_impl( ConnMgr, PingInterval, Deadline ) ->
 	case orca:ping( ConnMgr ) of
 		{ok, #orca_ok{}} -> ok;
 		{error, {lb, no_workers}} ->
-			case now_ms() < Deadline of
+			case ?now_ms < Deadline of
 				true ->
 					ok = timer:sleep( PingInterval ),
 					await_ready_impl( ConnMgr, PingInterval, Deadline );
